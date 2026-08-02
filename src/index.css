@@ -1,0 +1,38 @@
+:root {
+  --bg: #0d1117;
+  --panel: #0d1a0f;
+  --border: #3a6b3a;
+  --green: #50e850;
+  --green-dim: #30a030;
+  --orange: #f0a030;
+  --purple: #a050f0;
+  --red: #f04040;
+  --text: #c0f0c0;
+  --yellow: #f0d040;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, "Courier New", "Lucida Console", monospace;
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  image-rendering: pixelated;
+}
+
+body {
+  display: flex;
+  justify-content: center;
+  padding: 0;
+  height: 100vh;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+}
