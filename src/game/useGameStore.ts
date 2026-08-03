@@ -1,19 +1,17 @@
 import { create } from "zustand";
 import { useShallow } from "zustand/shallow";
-import type { GameState, D3Element, StackEntry, Weapon, VictoryReward } from "./types";
+import type { GameState, D3Element, StackEntry, Weapon, VictoryReward, TurnPhase } from "./types";
 import { playVictoryFanfare, playDefeatSound } from "./audio";
 import {
   createInitialState,
   heroAttack,
   heroShiftElement,
+  heroUnstackElement,
   heroCastSpell,
   heroSyzygy,
   canSyzygy,
   heroItemCount,
   executeEnemyTurn,
-  tickAtb,
-  ATB_MAX,
-  ATB_TICK_INTERVAL,
   elementLabel,
   effectiveAttack,
   effectiveDefense,
@@ -48,21 +46,25 @@ export interface SceneCallbacks {
 }
 
 interface GameActions {
+  advancePhase: () => void;
   rotate: (steps?: number) => void;
   reflect: () => void;
+  unstack: () => void;
   act: () => void;
   attack: () => void;
   syzygy: () => void;
   castSpell: (spellKey: string) => void;
   enemyTurn: () => void;
   startBattle: () => void;
-  atbTick: (dt: number) => void;
 }
 
 interface StoreState extends GameState {
   sceneCallbacks: SceneCallbacks | null;
   toasts: Toast[];
   battleLog: Toast[];
+  enemyCurse: string | null;
+  lastActionSelfHeal: boolean;
+  unstackingTop: boolean;
   shaking: boolean;
   actions: GameActions;
 }
@@ -94,23 +96,26 @@ const useStore = create<StoreState>((set, get) => {
   function delayedEndPhase(phase: "victory" | "defeat", toast: string, toastType: Toast["type"]) {
     if (phase === "victory") {
       playVictoryFanfare();
-      const s = get();
-      const curse = ENEMY_CURSES[Math.floor(Math.random() * ENEMY_CURSES.length)];
-      pushToast(`${s.enemy.name}: "${curse}"`, "debuff");
-    } else {
-      playDefeatSound();
-    }
-    setTimeout(() => {
-      if (phase === "victory") {
+      // Show curse phase for 2 seconds before victory modal
+      setTimeout(() => {
+        const s = get();
+        const curse = ENEMY_CURSES[Math.floor(Math.random() * ENEMY_CURSES.length)];
+        set({ phase: "enemy_dying" as TurnPhase, enemyCurse: curse });
+      }, 800);
+      setTimeout(() => {
         const s = get();
         const reward = calculateVictoryReward(s.hero, s.enemy, s.elementStack, s.killKind, s.heroAttackCount);
         const newHero = applyVictoryReward(s.hero, reward);
         set({ phase, hero: { ...newHero, currentHp: newHero.maxHp }, victoryReward: reward });
-      } else {
+        pushToast(toast, toastType);
+      }, 3000);
+    } else {
+      playDefeatSound();
+      setTimeout(() => {
         set({ phase });
-      }
-      pushToast(toast, toastType);
-    }, phase === "victory" ? 2400 : 2200);
+        pushToast(toast, toastType);
+      }, 2200);
+    }
   }
 
   function showElementToasts(stack: StackEntry[], weapon?: Weapon, prefix?: string) {
@@ -140,19 +145,34 @@ const useStore = create<StoreState>((set, get) => {
     }
   }
 
+  function advanceToEnemyStack() {
+    const s = get();
+    if (s.phase !== "enemy_avatar") return;
+    set({ phase: "enemy_stack" as TurnPhase });
+    setTimeout(() => doEnemyTurn(), 800 + Math.random() * 1500);
+  }
+
+  function advanceToPlayerAvatar() {
+    const s = get();
+    if (s.phase !== "player_hit") return;
+    set({ phase: "player_avatar" as TurnPhase });
+  }
+
   function doEnemyTurn() {
     const s = get();
-    if (s.phase !== "enemy_turn") return;
+    if (s.phase !== "enemy_stack") return;
     const newState = executeEnemyTurn(s);
     const isEnd = newState.phase === "defeat";
+    const lastLog = newState.log[newState.log.length - (isEnd ? 2 : 1)];
+    const enemyHealed = lastLog && lastLog.actor === "enemy" && lastLog.action === "spell_heal";
     set({
       hero: newState.hero,
       enemy: newState.enemy,
       enemyStack: newState.enemyStack,
       turn: newState.turn,
-      phase: isEnd ? "filling" : newState.phase,
+      phase: isEnd ? ("player_hit" as TurnPhase) : newState.phase,
       log: newState.log,
-      enemyAtb: newState.enemyAtb,
+      lastActionSelfHeal: !!enemyHealed,
     });
 
     if (newState.enemyStack.length > s.enemyStack.length) {
@@ -161,7 +181,6 @@ const useStore = create<StoreState>((set, get) => {
       showElementToasts(newState.enemyStack, newState.enemy.weapon, "Enemy");
     }
 
-    const lastLog = newState.log[newState.log.length - (isEnd ? 2 : 1)];
     if (lastLog && lastLog.actor === "enemy") {
       if (lastLog.action === "spell_heal") {
         const healedEnemy = newState.enemy.currentHp - s.enemy.currentHp;
@@ -180,48 +199,96 @@ const useStore = create<StoreState>((set, get) => {
     }
 
     if (isEnd) {
-      delayedEndPhase("defeat", "DEFEAT", "debuff");
+      setTimeout(() => {
+        delayedEndPhase("defeat", "DEFEAT", "debuff");
+      }, 3000);
+    } else if (enemyHealed) {
+      set({ phase: "enemy_avatar" as TurnPhase });
+      setTimeout(() => set({ phase: "player_avatar" as TurnPhase }), 3000);
+    } else {
+      setTimeout(() => advanceToPlayerAvatar(), 3000);
     }
   }
 
   const actions: GameActions = {
+    advancePhase: () => {
+      const s = get();
+      if (s.phase === "player_avatar") {
+        set({ phase: "player_stack" as TurnPhase });
+      }
+    },
+
     rotate: (steps = 1) => {
       const s = get();
-      if (s.phase !== "player_turn" || s.sceneCallbacks?.isAnimating()) return;
+      if (s.phase !== "player_stack" || s.sceneCallbacks?.isAnimating()) return;
       const newState = heroShiftElement(s, "rotate", steps);
       set({
         hero: newState.hero,
         phase: newState.phase,
         log: newState.log,
         elementStack: newState.elementStack,
-        heroAtb: newState.heroAtb,
+        heroAttackCount: newState.heroAttackCount,
+        lastActionSelfHeal: false,
       });
       showElementToasts(newState.elementStack);
       s.sceneCallbacks?.animateRotation(true);
       s.sceneCallbacks?.commitOfficial();
+      setTimeout(() => {
+        set({ phase: "enemy_avatar" as TurnPhase });
+        setTimeout(() => advanceToEnemyStack(), 3000);
+      }, 2000);
     },
-
 
     reflect: () => {
       const s = get();
-      if (s.phase !== "player_turn" || s.sceneCallbacks?.isAnimating()) return;
+      if (s.phase !== "player_stack" || s.sceneCallbacks?.isAnimating()) return;
       const newState = heroShiftElement(s, "reflect");
       set({
         hero: newState.hero,
         phase: newState.phase,
         log: newState.log,
         elementStack: newState.elementStack,
-        heroAtb: newState.heroAtb,
+        heroAttackCount: newState.heroAttackCount,
+        lastActionSelfHeal: false,
       });
       showElementToasts(newState.elementStack);
       s.sceneCallbacks?.animateReflect(true);
       s.sceneCallbacks?.commitOfficial();
+      setTimeout(() => {
+        set({ phase: "enemy_avatar" as TurnPhase });
+        setTimeout(() => advanceToEnemyStack(), 3000);
+      }, 2000);
+    },
+
+    unstack: () => {
+      const s = get();
+      if (s.phase !== "player_stack") return;
+      if (s.elementStack.length === 0) return;
+      set({ phase: "player_stack_locked" as TurnPhase, unstackingTop: true });
+      setTimeout(() => {
+        const cur = get();
+        const newState = heroUnstackElement({ ...cur, phase: "player_stack" as TurnPhase });
+        set({
+          hero: newState.hero,
+          phase: newState.phase,
+          log: newState.log,
+          elementStack: newState.elementStack,
+          heroAttackCount: newState.heroAttackCount,
+          lastActionSelfHeal: false,
+          unstackingTop: false,
+        });
+        showElementToasts(newState.elementStack.length > 0 ? newState.elementStack : []);
+        setTimeout(() => {
+          set({ phase: "enemy_avatar" as TurnPhase });
+          setTimeout(() => advanceToEnemyStack(), 3000);
+        }, 500);
+      }, 2000);
     },
 
     act: () => {
       const s = get();
-      if (s.phase !== "player_turn") return;
-      const resolved = resolveAct(s.hero, s.elementStack, s.enemy, s.enemyStack, s.syzygyUsed);
+      if (s.phase !== "player_stack") return;
+      const resolved = resolveAct(s.hero, s.elementStack, s.enemy, s.enemyStack, s.syzygyUsed, s.heroAttackCount);
       if (resolved.kind === "combo") {
         actions.syzygy();
       } else if (resolved.kind === "magic") {
@@ -234,86 +301,107 @@ const useStore = create<StoreState>((set, get) => {
 
     attack: () => {
       const s = get();
-      if (s.phase !== "player_turn") return;
+      if (s.phase !== "player_stack") return;
       const newState = heroAttack(s);
       const dmg = s.enemy.currentHp - newState.enemy.currentHp;
       const isEnd = newState.phase === "victory";
       set({
         hero: newState.hero,
         enemy: newState.enemy,
-        phase: isEnd ? "filling" : newState.phase,
+        phase: "enemy_avatar" as TurnPhase,
         log: newState.log,
-        heroAtb: newState.heroAtb,
+        killKind: newState.killKind,
+        lastActionSelfHeal: false,
       });
       if (dmg > 0) {
         pushToast(`${dmg} DMG`, "debuff");
         triggerShake();
       }
       if (isEnd) {
-        delayedEndPhase("victory", "VICTORY", "buff");
+        setTimeout(() => delayedEndPhase("victory", "VICTORY", "buff"), 3000);
+      } else {
+        setTimeout(() => advanceToEnemyStack(), 3000);
       }
     },
 
     syzygy: () => {
       const s = get();
-      if (s.phase !== "player_turn") return;
-      if (!canSyzygy(s.elementStack, s.syzygyUsed)) return;
+      if (s.phase !== "player_stack") return;
+      if (!canSyzygy(s.elementStack, s.syzygyUsed, s.heroAttackCount)) return;
       const newState = heroSyzygy(s);
       const dmg = s.enemy.currentHp - newState.enemy.currentHp;
       const isEnd = newState.phase === "victory";
       set({
         hero: newState.hero,
         enemy: newState.enemy,
-        phase: isEnd ? "filling" : newState.phase,
+        phase: "enemy_avatar" as TurnPhase,
         log: newState.log,
         elementStack: newState.elementStack,
         syzygyUsed: newState.syzygyUsed,
-        heroAtb: newState.heroAtb,
+        killKind: newState.killKind,
+        lastActionSelfHeal: false,
       });
       if (dmg > 0) {
         pushToast(`SYZYGY ${dmg} DMG`, "buff");
         triggerShake();
       }
       if (isEnd) {
-        delayedEndPhase("victory", "VICTORY", "buff");
+        setTimeout(() => delayedEndPhase("victory", "VICTORY", "buff"), 3000);
+      } else {
+        setTimeout(() => advanceToEnemyStack(), 3000);
       }
     },
 
     castSpell: (spellKey: string) => {
       const s = get();
-      if (s.phase !== "player_turn") return;
+      if (s.phase !== "player_stack") return;
       const spell = SPELL_CATALOG[spellKey];
       if (!spell) return;
       const targetSelf = spell.spellType === "heal";
+      const isHeal = spell.spellType === "heal";
       const newState = heroCastSpell(s, spellKey, targetSelf);
       const isEnd = newState.phase === "victory";
-      set({
-        hero: newState.hero,
-        enemy: newState.enemy,
-        phase: isEnd ? "filling" : newState.phase,
-        log: newState.log,
-        heroAtb: newState.heroAtb,
-      });
-      if (spell.spellType === "heal") {
+      if (isHeal) {
+        set({
+          hero: newState.hero,
+          enemy: newState.enemy,
+          phase: "player_avatar" as TurnPhase,
+          log: newState.log,
+          lastActionSelfHeal: true,
+        });
         const healed = newState.hero.currentHp - s.hero.currentHp;
         if (healed > 0) {
           pushToast(`+${healed} HP`, "buff");
         }
+        setTimeout(() => {
+          set({ phase: "enemy_avatar" as TurnPhase, lastActionSelfHeal: false });
+          setTimeout(() => advanceToEnemyStack(), 3000);
+        }, 1500);
       } else {
+        set({
+          hero: newState.hero,
+          enemy: newState.enemy,
+          phase: "enemy_avatar" as TurnPhase,
+          log: newState.log,
+          killKind: newState.killKind,
+          lastActionSelfHeal: false,
+        });
         const dmg = s.enemy.currentHp - newState.enemy.currentHp;
         if (dmg > 0) {
           pushToast(`${spell.name} ${dmg} DMG`, "debuff");
           triggerShake();
         }
-      }
-      if (isEnd) {
-        delayedEndPhase("victory", "VICTORY", "buff");
+        if (isEnd) {
+          setTimeout(() => delayedEndPhase("victory", "VICTORY", "buff"), 3000);
+        } else {
+          setTimeout(() => advanceToEnemyStack(), 3000);
+        }
       }
     },
 
     enemyTurn: () => {
       const s = get();
-      if (s.phase !== "enemy_turn") return;
+      if (s.phase !== "enemy_stack") return;
       const newState = executeEnemyTurn(s);
       set({
         hero: newState.hero,
@@ -351,27 +439,12 @@ const useStore = create<StoreState>((set, get) => {
         elementStack: newState.elementStack,
         enemyStack: newState.enemyStack,
         syzygyUsed: false,
-        heroAtb: 0,
-        enemyAtb: 0,
         killKind: null,
         heroAttackCount: 0,
         victoryReward: null,
         battleLog: [],
+        enemyCurse: null,
       });
-    },
-
-    atbTick: (dt: number) => {
-      const s = get();
-      if (s.phase !== "filling") return;
-      const newState = tickAtb(s, dt);
-      set({
-        heroAtb: newState.heroAtb,
-        enemyAtb: newState.enemyAtb,
-        phase: newState.phase,
-      });
-      if (newState.phase === "enemy_turn") {
-        setTimeout(() => doEnemyTurn(), 2000 + Math.random() * 3000);
-      }
     },
   };
 
@@ -380,6 +453,9 @@ const useStore = create<StoreState>((set, get) => {
     sceneCallbacks: null,
     toasts: [],
     battleLog: [],
+    enemyCurse: null,
+    lastActionSelfHeal: false,
+    unstackingTop: false,
     shaking: false,
     actions,
   };
@@ -396,8 +472,6 @@ export function useGameState(): GameState {
       elementStack: s.elementStack,
       enemyStack: s.enemyStack,
       syzygyUsed: s.syzygyUsed,
-      heroAtb: s.heroAtb,
-      enemyAtb: s.enemyAtb,
       killKind: s.killKind,
       heroAttackCount: s.heroAttackCount,
       victoryReward: s.victoryReward,
@@ -421,6 +495,18 @@ export function useBattleLog(): Toast[] {
   return useStore((s) => s.battleLog);
 }
 
+export function useEnemyCurse(): string | null {
+  return useStore((s) => s.enemyCurse);
+}
+
+export function useLastActionSelfHeal(): boolean {
+  return useStore((s) => s.lastActionSelfHeal);
+}
+
+export function useUnstackingTop(): boolean {
+  return useStore((s) => s.unstackingTop);
+}
+
 const store = {
   get sceneCallbacks() {
     return useStore.getState().sceneCallbacks;
@@ -433,4 +519,4 @@ const store = {
 };
 
 export { store };
-export { elementLabel, effectiveAttack, effectiveDefense, totalAttackModifier, totalDefenseModifier, WEAPON_D3, WEAPON_V4, weaponLookup, canSyzygy, heroItemCount, estimateAttacks, recommendedAttack, resolveAct, ATB_MAX, ATB_TICK_INTERVAL };
+export { elementLabel, effectiveAttack, effectiveDefense, totalAttackModifier, totalDefenseModifier, WEAPON_D3, WEAPON_V4, weaponLookup, canSyzygy, heroItemCount, estimateAttacks, recommendedAttack, resolveAct };

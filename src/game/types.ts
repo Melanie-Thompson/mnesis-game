@@ -296,6 +296,7 @@ export function estimateAttacks(
   heroStack: StackEntry[],
   enemyStack: StackEntry[],
   syzygyUsed?: boolean,
+  heroAttackCount?: number,
 ): AttackEstimate[] {
   const weapon = hero.weapon;
   const mods = computeStackModifiers(heroStack, weapon);
@@ -309,7 +310,7 @@ export function estimateAttacks(
       if (heroItemCount(hero, atk.key) <= 0) available = false;
     }
 
-    if (atk.requiresCombo && !canSyzygy(heroStack, syzygyUsed)) {
+    if (atk.requiresCombo && !canSyzygy(heroStack, syzygyUsed, heroAttackCount)) {
       available = false;
     }
 
@@ -382,9 +383,9 @@ export interface ResolvedAct {
   color: string;
 }
 
-export function resolveAct(hero: CharacterStats, stack: StackEntry[], enemy?: CharacterStats, enemyStack?: StackEntry[], syzygyUsed?: boolean): ResolvedAct {
+export function resolveAct(hero: CharacterStats, stack: StackEntry[], enemy?: CharacterStats, enemyStack?: StackEntry[], syzygyUsed?: boolean, heroAttackCount?: number): ResolvedAct {
   if (enemy) {
-    const estimates = estimateAttacks(hero, enemy, stack, enemyStack || [], syzygyUsed);
+    const estimates = estimateAttacks(hero, enemy, stack, enemyStack || [], syzygyUsed, heroAttackCount);
     const damageOpts = estimates.filter((e) => e.available && e.attack.kind !== "heal");
     if (damageOpts.length > 0) {
       const best = damageOpts.reduce((b, c) => c.estimatedValue > b.estimatedValue ? c : b);
@@ -596,7 +597,16 @@ export function spawnBoss(name: string = "Pneuma Lord"): EnemyStats {
 
 // --- Battle Logic ---
 
-export type TurnPhase = "player_turn" | "enemy_turn" | "filling" | "victory" | "defeat";
+export type TurnPhase =
+  | "player_avatar"        // show player stats, tap to go to stack
+  | "player_stack"         // interactive stack tree + attack
+  | "player_stack_locked"  // stack tree visible but no interaction (just shifted)
+  | "enemy_avatar"         // show enemy (damage dealt or enemy healed)
+  | "enemy_stack"          // enemy thinking + acting
+  | "player_hit"           // show player (damage taken from enemy)
+  | "victory"
+  | "defeat"
+  | "enemy_dying";
 
 export interface LogEntry {
   id: number;
@@ -644,8 +654,6 @@ export interface GameState {
   elementStack: StackEntry[];
   enemyStack: StackEntry[];
   syzygyUsed: boolean;
-  heroAtb: number;
-  enemyAtb: number;
   killKind: AttackKind | null;
   heroAttackCount: number;
   victoryReward: VictoryReward | null;
@@ -686,7 +694,7 @@ export function createInitialState(): GameState {
 
   return {
     turn: 1,
-    phase: "filling",
+    phase: "player_avatar",
     hero,
     enemy,
     log: [
@@ -695,8 +703,6 @@ export function createInitialState(): GameState {
     elementStack: [],
     enemyStack: [],
     syzygyUsed: false,
-    heroAtb: 0,
-    enemyAtb: 0,
     killKind: null,
     heroAttackCount: 0,
     victoryReward: null,
@@ -1072,7 +1078,7 @@ export function executeEnemyAI(
 // --- Hero Actions ---
 
 export function heroAttack(state: GameState): GameState {
-  if (state.phase !== "player_turn") return state;
+  if (state.phase !== "player_stack") return state;
 
   const dmg = calculateDamage(state.hero, state.enemy, state.elementStack, state.enemyStack);
   const newEnemy = {
@@ -1099,7 +1105,7 @@ export function heroAttack(state: GameState): GameState {
     };
   }
 
-  return { ...state, enemy: newEnemy, phase: "filling", heroAtb: 0, heroAttackCount: newAttackCount, log };
+  return { ...state, enemy: newEnemy, phase: "enemy_avatar", heroAttackCount: newAttackCount, log };
 }
 
 // --- Syzygy (combo finisher) ---
@@ -1111,14 +1117,15 @@ export function stackHasSyzygy(stack: StackEntry[]): boolean {
   return hasRotation && hasReflection;
 }
 
-export function canSyzygy(stack: StackEntry[], syzygyUsed?: boolean): boolean {
+export function canSyzygy(stack: StackEntry[], syzygyUsed?: boolean, heroAttackCount?: number): boolean {
   if (syzygyUsed) return false;
+  if ((heroAttackCount ?? 0) < 3) return false;
   return stackHasSyzygy(stack);
 }
 
 export function heroSyzygy(state: GameState): GameState {
-  if (state.phase !== "player_turn") return state;
-  if (!canSyzygy(state.elementStack, state.syzygyUsed)) return state;
+  if (state.phase !== "player_stack") return state;
+  if (!canSyzygy(state.elementStack, state.syzygyUsed, state.heroAttackCount)) return state;
 
   const stack = state.elementStack;
   const mods = computeStackModifiers(stack, state.hero.weapon);
@@ -1154,7 +1161,7 @@ export function heroSyzygy(state: GameState): GameState {
     };
   }
 
-  return { ...state, hero: newHero, enemy: newEnemy, phase: "filling", heroAtb: 0, syzygyUsed: true, heroAttackCount: newAttackCount, log };
+  return { ...state, hero: newHero, enemy: newEnemy, phase: "enemy_avatar", syzygyUsed: true, heroAttackCount: newAttackCount, log };
 }
 
 export function heroShiftElement(
@@ -1162,7 +1169,7 @@ export function heroShiftElement(
   action: "rotate" | "reflect",
   steps: number = 1,
 ): GameState {
-  if (state.phase !== "player_turn") return state;
+  if (state.phase !== "player_stack") return state;
 
   const prevLabel = elementLabel(state.hero.element);
   let newElement: D3Element;
@@ -1188,10 +1195,31 @@ export function heroShiftElement(
   return {
     ...state,
     hero: newHero,
-    phase: "filling",
-    heroAtb: 0,
+    phase: "player_stack_locked",
     elementStack: newStack,
+    heroAttackCount: state.heroAttackCount + 1,
     log: [...state.log, makeLogEntry(state.turn, "hero", `shift_${action}`, logMsg)],
+  };
+}
+
+export function heroUnstackElement(state: GameState): GameState {
+  if (state.phase !== "player_stack") return state;
+  if (state.elementStack.length === 0) return state;
+
+  const newStack = state.elementStack.slice(0, -1);
+  const prevElement = newStack.length > 0
+    ? newStack[newStack.length - 1].result
+    : state.hero.weapon.identity;
+  const newHero = { ...state.hero, element: prevElement };
+  const logMsg = `Turn ${state.turn} [HERO UNSTACK]: ${state.hero.name} reverted to ${elementLabel(prevElement)}.`;
+
+  return {
+    ...state,
+    hero: newHero,
+    phase: "player_stack_locked",
+    elementStack: newStack,
+    heroAttackCount: state.heroAttackCount + 1,
+    log: [...state.log, makeLogEntry(state.turn, "hero", "unstack", logMsg)],
   };
 }
 
@@ -1201,7 +1229,7 @@ export function heroItemCount(hero: CharacterStats, spellKey: string): number {
 }
 
 export function heroCastSpell(state: GameState, spellKey: string, targetSelf: boolean): GameState {
-  if (state.phase !== "player_turn") return state;
+  if (state.phase !== "player_stack") return state;
 
   const spell = SPELL_CATALOG[spellKey];
   if (!spell) return state;
@@ -1255,45 +1283,11 @@ export function heroCastSpell(state: GameState, spellKey: string, targetSelf: bo
     };
   }
 
-  return { ...state, hero: newHero, enemy: newEnemy, phase: "filling", heroAtb: 0, heroAttackCount: newAttackCount, log };
-}
-
-export const ATB_MAX = 100;
-export const ATB_TICK_INTERVAL = 50;
-
-export function atbTickRate(speed: number): number {
-  return speed * 0.35;
-}
-
-export function tickAtb(state: GameState, dt: number): GameState {
-  if (state.phase !== "filling") return state;
-  if (state.hero.currentHp <= 0 || state.enemy.currentHp <= 0) return state;
-
-  const heroRate = atbTickRate(state.hero.speed);
-  const enemyRate = atbTickRate(state.enemy.speed);
-  const ticks = dt / ATB_TICK_INTERVAL;
-
-  const newHeroAtb = Math.min(ATB_MAX, state.heroAtb + heroRate * ticks);
-  const newEnemyAtb = Math.min(ATB_MAX, state.enemyAtb + enemyRate * ticks);
-
-  if (newHeroAtb >= ATB_MAX && newEnemyAtb >= ATB_MAX) {
-    if (state.hero.speed >= state.enemy.speed) {
-      return { ...state, heroAtb: ATB_MAX, enemyAtb: newEnemyAtb, phase: "player_turn" };
-    }
-    return { ...state, heroAtb: newHeroAtb, enemyAtb: ATB_MAX, phase: "enemy_turn" };
-  }
-  if (newHeroAtb >= ATB_MAX) {
-    return { ...state, heroAtb: ATB_MAX, enemyAtb: newEnemyAtb, phase: "player_turn" };
-  }
-  if (newEnemyAtb >= ATB_MAX) {
-    return { ...state, heroAtb: newHeroAtb, enemyAtb: ATB_MAX, phase: "enemy_turn" };
-  }
-
-  return { ...state, heroAtb: newHeroAtb, enemyAtb: newEnemyAtb };
+  return { ...state, hero: newHero, enemy: newEnemy, phase: "enemy_avatar", heroAttackCount: newAttackCount, log };
 }
 
 export function executeEnemyTurn(state: GameState): GameState {
-  if (state.phase !== "enemy_turn") return state;
+  if (state.phase !== "enemy_stack") return state;
 
   const aiAction = executeEnemyAI(state.enemy, state.hero, state.enemyStack.length, state.elementStack);
   let newHero = state.hero;
@@ -1354,8 +1348,7 @@ export function executeEnemyTurn(state: GameState): GameState {
     enemy: newEnemy,
     enemyStack: newEnemyStack,
     turn: state.turn + 1,
-    phase: "filling",
-    enemyAtb: 0,
+    phase: "player_hit",
     log,
   };
 }

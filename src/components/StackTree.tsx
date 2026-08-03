@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { useGameState, useGameActions, heroItemCount } from "../game/useGameStore";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useGameState, useGameActions, heroItemCount, useEnemyCurse, useUnstackingTop } from "../game/useGameStore";
 import {
   rotateElement,
   reflectElement,
@@ -7,6 +7,7 @@ import {
   cayleyLookup,
   weaponLookup,
   estimateAttacks,
+  stackHasSyzygy,
   SPELL_CATALOG,
   STATE_NAMES,
 } from "../game/types";
@@ -68,22 +69,34 @@ function getEffects(currentElement: D3Element, applied: D3Element): EffectLine[]
 const NODE_W = 72;
 const NODE_H = 28;
 const ROW_GAP = 44;
-const COL_GAP = 40;
+const COL_GAP = 60;
 
 // ============================================================
 // Enemy tree — grows UPWARD (most recent at top)
 // ============================================================
 
-const ORB_R = 16;
-const ORB_GAP = 44;
+const ORB_R = 28;
+const ORB_GAP = 72;
 
-function PixelOrb({ cx, cy, r, color, isCurrent, opacity }: {
-  cx: number; cy: number; r: number; color: string; isCurrent: boolean; opacity: number;
+// Hyle (r=0): Earth triangle (▽) + shield ⛨
+// Pneuma (r=1): Air triangle (△) + wind ☴
+// Psyche (r=2): Crescent ☽ + eye 𓂀
+// s=1 variants get an inverted/mirrored feel
+const ELEMENT_GLYPHS: Record<string, string> = {
+  "0,0": "🜃",  // Hyle: alchemical earth
+  "1,0": "🜁",  // Pneuma: alchemical air
+  "2,0": "☽",   // Psyche: crescent moon
+  "0,1": "🜄",  // s-Hyle: alchemical water
+  "1,1": "🜂",  // s-Pneuma: alchemical fire
+  "2,1": "✧",   // s-Psyche: star
+};
+
+function ElementGlyph({ cx, cy, r, color, element, isCurrent, opacity }: {
+  cx: number; cy: number; r: number; color: string; element: D3Element; isCurrent: boolean; opacity: number;
 }) {
-  const px = 3;
+  const glyph = ELEMENT_GLYPHS[`${element.r},${element.s}`] || "◇";
   return (
     <g opacity={opacity}>
-      {/* outer glow rings for current */}
       {isCurrent && <>
         <circle cx={cx} cy={cy} r={r + 6}
           fill="none" stroke={color} strokeWidth={1} opacity={0.15}
@@ -94,22 +107,18 @@ function PixelOrb({ cx, cy, r, color, isCurrent, opacity }: {
           className="orb-glow-ring"
         />
       </>}
-      {/* main sphere — saturated colored fill */}
       <circle cx={cx} cy={cy} r={r}
-        fill={color} opacity={isCurrent ? 0.55 : 0.35}
-        stroke={color} strokeWidth={isCurrent ? 3 : 2}
+        fill={isCurrent ? color : "none"} fillOpacity={isCurrent ? 0.2 : 0}
+        stroke={color} strokeWidth={isCurrent ? 2.5 : 1.5}
       />
-      {/* pixel highlight block top-left (2x2 grid) */}
-      <rect x={cx - r * 0.45} y={cy - r * 0.6} width={px} height={px} fill="#fff" opacity={0.9} />
-      <rect x={cx - r * 0.45 + px} y={cy - r * 0.6} width={px} height={px} fill="#fff" opacity={0.6} />
-      <rect x={cx - r * 0.45} y={cy - r * 0.6 + px} width={px} height={px} fill="#fff" opacity={0.5} />
-      {/* pixel shadow bottom-right (2x1) */}
-      <rect x={cx + r * 0.15} y={cy + r * 0.4} width={px} height={px} fill="#000" opacity={0.6} />
-      <rect x={cx + r * 0.15 + px} y={cy + r * 0.4} width={px} height={px} fill="#000" opacity={0.4} />
-      {/* bright center dot */}
-      {isCurrent && (
-        <rect x={cx - 1} y={cy - r * 0.25} width={2} height={2} fill="#fff" opacity={0.7} />
-      )}
+      <text
+        x={cx} y={cy + 1}
+        textAnchor="middle" dominantBaseline="central"
+        fill={color} fontSize={r * 1.1} fontWeight={700}
+        style={{ pointerEvents: "none", filter: isCurrent ? `drop-shadow(0 0 4px ${color})` : "none" }}
+      >
+        {glyph}
+      </text>
     </g>
   );
 }
@@ -129,15 +138,14 @@ function EnemyTree({ stack, enemy }: { stack: StackEntry[]; enemy: CharacterStat
 
   const treeRows = nodes.length;
   const treeHeight = treeRows * ORB_GAP + ORB_R * 2 + 10;
-  const treeWidth = NODE_W * 3 + COL_GAP * 2 + 200;
+  const treeWidth = ORB_R * 6 + 120;
   const centerX = treeWidth / 2;
 
   return (
     <svg
-      width="100%"
-      height={treeHeight}
       viewBox={`0 0 ${treeWidth} ${treeHeight}`}
       className="stack-tree-svg"
+      style={{ width: "100%", height: "auto" }}
     >
       {nodes.map((node, i) => {
         const row = treeRows - 1 - i;
@@ -146,7 +154,7 @@ function EnemyTree({ stack, enemy }: { stack: StackEntry[]; enemy: CharacterStat
         const isCurrent = i === nodes.length - 1;
         const prevY = (row + 1) * ORB_GAP + ORB_R + 5;
         const showLine = i > 0;
-        const opacity = isCurrent ? 1 : 0.5 + (i / nodes.length) * 0.3;
+        const opacity = isCurrent ? 1 : 0.7 + (i / nodes.length) * 0.2;
         const isHovered = hoveredOrb === i;
 
         return (
@@ -161,14 +169,14 @@ function EnemyTree({ stack, enemy }: { stack: StackEntry[]; enemy: CharacterStat
                 stroke={color} strokeWidth={2} strokeOpacity={0.3}
               />
             )}
-            <PixelOrb cx={centerX} cy={y} r={ORB_R} color={color} isCurrent={isCurrent} opacity={opacity} />
+            <ElementGlyph cx={centerX} cy={y} r={ORB_R} color={color} element={node.element} isCurrent={isCurrent} opacity={opacity} />
             {/* hover-only label */}
             {isHovered && (
               <text
                 x={centerX} y={y + 1}
                 textAnchor="middle" dominantBaseline="central"
                 fill="#fff"
-                fontSize={9} fontWeight={700} fontFamily="inherit"
+                fontSize={14} fontWeight={700} fontFamily="inherit"
                 style={{ pointerEvents: "none" }}
               >
                 {labelFn(node.element)}
@@ -232,19 +240,20 @@ function pieSlicePath(cx: number, cy: number, r: number, startAngle: number, end
 }
 
 function AttackSidebar({
-  hero, enemy, heroStack, enemyStack, syzygyUsed, canAct, onAttack, onCastSpell, onSyzygy,
+  hero, enemy, heroStack, enemyStack, syzygyUsed, heroAttackCount, canAct, onAttack, onCastSpell, onSyzygy,
 }: {
   hero: CharacterStats;
   enemy: CharacterStats & { weapon: Weapon };
   heroStack: StackEntry[];
   enemyStack: StackEntry[];
   syzygyUsed: boolean;
+  heroAttackCount: number;
   canAct: boolean;
   onAttack: () => void;
   onCastSpell: (key: string) => void;
   onSyzygy: () => void;
 }) {
-  const estimates = estimateAttacks(hero, enemy, heroStack, enemyStack, syzygyUsed);
+  const estimates = estimateAttacks(hero, enemy, heroStack, enemyStack, syzygyUsed, heroAttackCount);
   const best = estimates.filter((e) => e.available && e.attack.kind !== "heal")
     .reduce<AttackEstimate | null>((b, c) => !b || c.estimatedValue > b.estimatedValue ? c : b, null);
 
@@ -296,17 +305,19 @@ function AttackSidebar({
         </svg>
       </div>
       <div className="attack-chips">
-        {estimates.filter((est) => est.attack.requiresCombo ? est.available : true).map((est) => {
+        {estimates.map((est) => {
           const item = hero.items.find((i) => i.spellKey === est.attack.key);
           const count = item?.count ?? 0;
           const hasCount = item !== undefined;
           const isBest = best && est.attack.key === best.attack.key && est.available;
           const stackCount = hasCount ? Math.min(count, 5) : 0;
           const clickable = canAct && est.available;
+          const almostReady = est.attack.requiresCombo && !est.available && !syzygyUsed
+            && heroAttackCount >= 2 && stackHasSyzygy(heroStack);
           return (
             <div
               key={est.attack.key}
-              className={`attack-chip-stack${isBest ? " attack-chip-best" : ""}${!est.available ? " attack-chip-off" : ""}${clickable ? " attack-chip-clickable" : ""}`}
+              className={`attack-chip-stack${isBest ? " attack-chip-best" : ""}${!est.available ? " attack-chip-off" : ""}${clickable ? " attack-chip-clickable" : ""}${almostReady ? " attack-chip-almost" : ""}`}
               style={{ "--chip-color": est.attack.color, "--stack-depth": stackCount, cursor: clickable ? "pointer" : "default" } as React.CSSProperties}
               onClick={() => handleChipClick(est)}
             >
@@ -318,7 +329,7 @@ function AttackSidebar({
                 />
               ))}
               <div className="attack-chip">
-                <AttackIcon kind={est.attack.kind} color={est.attack.color} size={16} />
+                <AttackIcon kind={est.attack.kind} color={est.attack.color} size={24} />
               </div>
             </div>
           );
@@ -357,12 +368,14 @@ function EnemyTaunt({ name }: { name: string }) {
 export default function StackTree() {
   const state = useGameState();
   const actions = useGameActions();
+  const enemyCurse = useEnemyCurse();
+  const unstacking = useUnstackingTop();
   const h = state.hero;
   const stack = state.elementStack;
   const enemyStack = state.enemyStack;
   const [hoveredBranch, setHoveredBranch] = useState<"rotate" | "reflect" | null>(null);
   const [hoveredPlayerOrb, setHoveredPlayerOrb] = useState<number | null>(null);
-  const canAct = state.phase === "player_turn";
+  const canAct = state.phase === "player_stack";
   const healCount = heroItemCount(h, "renew");
   const currentPower = stancePower(h, stack);
 
@@ -387,19 +400,45 @@ export default function StackTree() {
   const reflectPower = previewPower(h, reflectResult, reflectStack);
 
   const allNodes = [{ element: { r: 0, s: 0 } as D3Element }, ...stack.map(e => ({ element: e.result }))];
-  const pastNodes = allNodes.length > 4 ? allNodes.slice(allNodes.length - 4) : allNodes;
+  const prevLenRef = useRef(allNodes.length);
+  const [evicting, setEvicting] = useState(false);
+
+  useEffect(() => {
+    const prevLen = prevLenRef.current;
+    prevLenRef.current = allNodes.length;
+    if (allNodes.length > 4 && allNodes.length > prevLen) {
+      setEvicting(true);
+      const t = setTimeout(() => setEvicting(false), 1500);
+      return () => clearTimeout(t);
+    }
+  }, [allNodes.length]);
+
+  const windowSize = evicting ? 5 : 4;
+  const pastNodes = allNodes.length > windowSize ? allNodes.slice(allNodes.length - windowSize) : allNodes;
   const visibleStack = stack.length > 3 ? stack.slice(stack.length - 3) : stack;
 
+  const spread = ORB_R * 2 + COL_GAP;
   const playerRows = pastNodes.length + 1;
-  const playerHeight = playerRows * ORB_GAP + ORB_R * 2 + 50;
-  const treeWidth = NODE_W * 3 + COL_GAP * 2 + 240;
+  const playerHeight = playerRows * ORB_GAP + ORB_R * 2 + 120;
+  const treeWidth = spread * 2 + ORB_R * 2 + 80;
   const centerX = treeWidth / 2;
 
-  const isPlayerTurn = state.phase === "player_turn" || state.phase === "filling";
-  const isEnemyTurn = state.phase === "enemy_turn";
+  const isPlayerTurn = state.phase === "player_stack" || state.phase === "player_stack_locked";
+  const isEnemyTurn = state.phase === "enemy_stack";
+  const isDying = state.phase === "enemy_dying";
 
   return (
     <div className="panel canvas-panel">
+      {/* Enemy dying curse */}
+      {isDying && enemyCurse && (
+        <div className="enemy-curse-screen">
+          <div className="enemy-taunt-bubble enemy-curse-bubble">
+            <span className="enemy-taunt-name">{state.enemy.name}</span>
+            <span className="enemy-taunt-text">{enemyCurse}</span>
+          </div>
+        </div>
+      )}
+
       {/* Enemy tree — upward */}
       {isEnemyTurn && (<>
         <div className="label" style={{ color: "#f04040" }}>
@@ -412,66 +451,72 @@ export default function StackTree() {
       </>)}
 
       {/* Divider */}
-      <div className="stack-tree-divider">
-        <span className="stack-tree-vs">VS</span>
-      </div>
+      {!isDying && (
+        <div className="stack-tree-divider">
+          <span className="stack-tree-vs">VS</span>
+        </div>
+      )}
 
       {/* Player tree — downward */}
-      {(isPlayerTurn || (!isEnemyTurn)) && (<>
+      {(isPlayerTurn || (!isEnemyTurn && !isDying)) && (<>
         <div className="label" style={{ color: "#50e850" }}>
           {h.weapon.name} [{h.weapon.groupName}] — click a branch to shift
         </div>
       <div className="stack-tree-wrap stack-tree-player">
         <svg
-          width="100%"
-          height={playerHeight}
           viewBox={`0 0 ${treeWidth} ${playerHeight}`}
           className="stack-tree-svg"
+          style={{ width: "100%", height: "auto" }}
         >
           {pastNodes.map((node, i) => {
+            const isEvicting = evicting && i === 0;
             const y = i * ORB_GAP + ORB_R + 10;
             const color = d3NodeColor(node.element);
             const isCurrent = i === pastNodes.length - 1;
             const label = d3ShortName(node.element);
             const nextY = y + ORB_GAP;
             const showLine = i < pastNodes.length - 1;
-            const opacity = isCurrent ? 1 : 0.5 + (i / pastNodes.length) * 0.3;
+            const opacity = isEvicting ? 1 : isCurrent ? 1 : 0.7 + (i / pastNodes.length) * 0.2;
             const isHovered = hoveredPlayerOrb === i;
+            const nodeIdx = allNodes.indexOf(node);
 
             return (
-              <g key={`past-${i}`}
+              <g key={`node-${nodeIdx}`}
+                className={isEvicting ? "orb-evicting" : "orb-settled"}
+                style={isEvicting ? undefined : { transform: `translateY(${y}px)` }}
                 onMouseEnter={() => setHoveredPlayerOrb(i)}
                 onMouseLeave={() => setHoveredPlayerOrb(null)}
               >
-                {showLine && (
+                {showLine && !isEvicting && (
                   <line
-                    x1={centerX} y1={y + ORB_R}
-                    x2={centerX} y2={nextY - ORB_R}
+                    x1={centerX} y1={isEvicting ? y + ORB_R : ORB_R}
+                    x2={centerX} y2={isEvicting ? nextY - ORB_R : ORB_GAP - ORB_R}
                     stroke={d3NodeColor(pastNodes[i + 1].element)}
                     strokeWidth={2} strokeOpacity={0.3}
                   />
                 )}
-                <PixelOrb cx={centerX} cy={y} r={ORB_R} color={color} isCurrent={isCurrent} opacity={opacity} />
+                <g className={isCurrent && unstacking ? "orb-removing" : ""}>
+                  <ElementGlyph cx={centerX} cy={isEvicting ? y : 0} r={ORB_R} color={color} element={node.element} isCurrent={isCurrent} opacity={opacity} />
+                </g>
                 {isHovered && (
                   <text
-                    x={centerX} y={y + 1}
+                    x={centerX} y={isEvicting ? y + 1 : 1}
                     textAnchor="middle" dominantBaseline="central"
                     fill="#fff"
-                    fontSize={9} fontWeight={700} fontFamily="inherit"
+                    fontSize={14} fontWeight={700} fontFamily="inherit"
                     style={{ pointerEvents: "none" }}
                   >
                     {label}
                   </text>
                 )}
-                <circle cx={centerX} cy={y} r={ORB_R + 4} fill="transparent" />
+                <circle cx={centerX} cy={isEvicting ? y : 0} r={ORB_R + 4} fill="transparent" />
               </g>
             );
           })}
 
-          {(() => {
+          {canAct && (() => {
             const parentY = (pastNodes.length - 1) * ORB_GAP + ORB_R + 10;
             const branchY = parentY + ORB_GAP;
-            const spread = ORB_R * 2 + COL_GAP / 2;
             const leftX = centerX - spread;
             const rightX = centerX + spread;
 
@@ -486,12 +531,12 @@ export default function StackTree() {
                 <line
                   x1={centerX} y1={parentY + ORB_R}
                   x2={leftX} y2={branchY - ORB_R}
-                  stroke={rotColor} strokeWidth={2} strokeDasharray="4,3" strokeOpacity={0.4}
+                  stroke={rotColor} strokeWidth={2} strokeDasharray="4,3" strokeOpacity={0.7}
                 />
                 <line
                   x1={centerX} y1={parentY + ORB_R}
                   x2={rightX} y2={branchY - ORB_R}
-                  stroke={refColor} strokeWidth={2} strokeDasharray="4,3" strokeOpacity={0.4}
+                  stroke={refColor} strokeWidth={2} strokeDasharray="4,3" strokeOpacity={0.7}
                 />
 
                 <g
@@ -501,24 +546,27 @@ export default function StackTree() {
                   onMouseLeave={() => setHoveredBranch(null)}
                   style={{ cursor: canAct ? "pointer" : "default" }}
                 >
-                  {/* hit area covering orb + labels */}
-                  <rect x={leftX - 40} y={branchY - ORB_R - 2} width={80} height={ORB_R * 2 + 38} fill="transparent" />
+                  <rect x={leftX - 50} y={branchY - ORB_R - 2} width={100} height={ORB_R * 2 + 50} fill="transparent" />
                   <circle cx={leftX} cy={branchY} r={ORB_R}
-                    fill={rotColor} opacity={0.12}
-                    stroke={rotColor} strokeWidth={1.5} strokeDasharray="4,3"
+                    fill={rotColor} fillOpacity={0.15}
+                    stroke={rotColor} strokeWidth={3} strokeOpacity={1}
                   />
-                  <rect x={leftX - ORB_R * 0.4} y={branchY - ORB_R * 0.55} width={3} height={3} fill="#fff" opacity={0.3} />
+                  <text x={leftX} y={branchY + 1} textAnchor="middle" dominantBaseline="central"
+                    fill={rotColor} fontSize={ORB_R * 1.1} opacity={1}
+                    style={{ pointerEvents: "none", filter: `drop-shadow(0 0 3px ${rotColor})` }}
+                  >{ELEMENT_GLYPHS[`${rotateResult.r},${rotateResult.s}`] || "◇"}</text>
                   <text
-                    x={leftX} y={branchY + ORB_R + 14}
+                    x={leftX} y={branchY + ORB_R + 18}
                     textAnchor="middle" dominantBaseline="central"
-                    fill={rotColor} fontSize={13} fontWeight={800} fontFamily="inherit"
+                    fill={rotColor} fontSize={16} fontWeight={800} fontFamily="inherit"
+                    style={{ filter: `drop-shadow(0 0 2px ${rotColor})` }}
                   >
                     {d3ShortName(rotateResult)}
                   </text>
                   <text
-                    x={leftX} y={branchY + ORB_R + 28}
+                    x={leftX} y={branchY + ORB_R + 36}
                     textAnchor="middle" dominantBaseline="central"
-                    fill={powerDeltaRot >= 0 ? "#50e850" : "#f04040"} fontSize={11} fontWeight={700} fontFamily="inherit"
+                    fill={powerDeltaRot >= 0 ? "#50e850" : "#f04040"} fontSize={14} fontWeight={700} fontFamily="inherit"
                   >
                     {powerDeltaRot >= 0 ? "+" : ""}{powerDeltaRot.toFixed(1)}x
                   </text>
@@ -531,23 +579,27 @@ export default function StackTree() {
                   onMouseLeave={() => setHoveredBranch(null)}
                   style={{ cursor: canAct ? "pointer" : "default" }}
                 >
-                  <rect x={rightX - 40} y={branchY - ORB_R - 2} width={80} height={ORB_R * 2 + 38} fill="transparent" />
+                  <rect x={rightX - 50} y={branchY - ORB_R - 2} width={100} height={ORB_R * 2 + 50} fill="transparent" />
                   <circle cx={rightX} cy={branchY} r={ORB_R}
-                    fill={refColor} opacity={0.12}
-                    stroke={refColor} strokeWidth={1.5} strokeDasharray="4,3"
+                    fill={refColor} fillOpacity={0.15}
+                    stroke={refColor} strokeWidth={3} strokeOpacity={1}
                   />
-                  <rect x={rightX - ORB_R * 0.4} y={branchY - ORB_R * 0.55} width={3} height={3} fill="#fff" opacity={0.3} />
+                  <text x={rightX} y={branchY + 1} textAnchor="middle" dominantBaseline="central"
+                    fill={refColor} fontSize={ORB_R * 1.1} opacity={1}
+                    style={{ pointerEvents: "none", filter: `drop-shadow(0 0 3px ${refColor})` }}
+                  >{ELEMENT_GLYPHS[`${reflectResult.r},${reflectResult.s}`] || "◇"}</text>
                   <text
-                    x={rightX} y={branchY + ORB_R + 14}
+                    x={rightX} y={branchY + ORB_R + 18}
                     textAnchor="middle" dominantBaseline="central"
-                    fill={refColor} fontSize={13} fontWeight={800} fontFamily="inherit"
+                    fill={refColor} fontSize={16} fontWeight={800} fontFamily="inherit"
+                    style={{ filter: `drop-shadow(0 0 2px ${refColor})` }}
                   >
                     {d3ShortName(reflectResult)}
                   </text>
                   <text
-                    x={rightX} y={branchY + ORB_R + 28}
+                    x={rightX} y={branchY + ORB_R + 36}
                     textAnchor="middle" dominantBaseline="central"
-                    fill={powerDeltaRef >= 0 ? "#50e850" : "#f04040"} fontSize={11} fontWeight={700} fontFamily="inherit"
+                    fill={powerDeltaRef >= 0 ? "#50e850" : "#f04040"} fontSize={14} fontWeight={700} fontFamily="inherit"
                   >
                     {powerDeltaRef >= 0 ? "+" : ""}{powerDeltaRef.toFixed(1)}x
                   </text>
@@ -555,17 +607,19 @@ export default function StackTree() {
 
                 {hoveredBranch && (() => {
                   const isRotate = hoveredBranch === "rotate";
-                  const tipX = isRotate ? leftX - NODE_W / 2 - 8 : rightX + NODE_W / 2 + 8;
-                  const tipAnchor = isRotate ? "end" : "start";
+                  const bx = isRotate ? leftX : rightX;
                   const effects = getEffects(h.element, isRotate ? rotateApplied : reflectApplied);
+                  const tipY = branchY + ORB_R + 42;
+                  const tipW = 120;
+                  const tipH = effects.length * 18 + 10;
 
                   return (
                     <g>
                       <rect
-                        x={isRotate ? tipX - 100 : tipX}
-                        y={branchY - NODE_H / 2 - 4}
-                        width={100}
-                        height={effects.length * 14 + 8}
+                        x={bx - tipW / 2}
+                        y={tipY}
+                        width={tipW}
+                        height={tipH}
                         rx={4}
                         fill="#1e293b"
                         stroke="#334155"
@@ -575,12 +629,12 @@ export default function StackTree() {
                       {effects.map((eff, ei) => (
                         <text
                           key={ei}
-                          x={isRotate ? tipX - 6 : tipX + 6}
-                          y={branchY - NODE_H / 2 + 8 + ei * 14}
-                          textAnchor={tipAnchor}
+                          x={bx}
+                          y={tipY + 12 + ei * 18}
+                          textAnchor="middle"
                           dominantBaseline="central"
                           fill={eff.type === "buff" ? "#50e850" : eff.type === "debuff" ? "#f04040" : "#90b0a0"}
-                          fontSize={10}
+                          fontSize={14}
                           fontWeight={600}
                           fontFamily="inherit"
                         >
@@ -594,12 +648,14 @@ export default function StackTree() {
             );
           })()}
         </svg>
-        <AttackSidebar
-          hero={h} enemy={state.enemy} heroStack={stack} enemyStack={enemyStack}
-          syzygyUsed={state.syzygyUsed} canAct={canAct}
-          onAttack={() => actions.act()} onCastSpell={(key) => actions.castSpell(key)}
-          onSyzygy={() => actions.syzygy()}
-        />
+        {canAct && (
+          <AttackSidebar
+            hero={h} enemy={state.enemy} heroStack={stack} enemyStack={enemyStack}
+            syzygyUsed={state.syzygyUsed} heroAttackCount={state.heroAttackCount} canAct={canAct}
+            onAttack={() => actions.act()} onCastSpell={(key) => actions.castSpell(key)}
+            onSyzygy={() => actions.syzygy()}
+          />
+        )}
       </div>
       </>)}
     </div>

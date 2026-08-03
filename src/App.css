@@ -11,6 +11,8 @@
   min-height: 0;
   background: var(--bg);
   position: relative;
+  padding-top: env(safe-area-inset-top, 40px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 #app.screen-shake {
@@ -43,14 +45,14 @@
   background: #0a120a;
 }
 .title-row h1 {
-  font-size: 11px;
+  font-size: 0.75rem;
   letter-spacing: 3px;
   color: var(--green);
   margin: 0;
   text-transform: uppercase;
 }
 .title-row .clock {
-  font-size: 9px;
+  font-size: 0.65rem;
   color: var(--yellow);
   letter-spacing: 1px;
 }
@@ -63,7 +65,7 @@
   padding: 12px 14px;
 }
 .panel > .label {
-  font-size: 8px;
+  font-size: 0.6rem;
   letter-spacing: 1.5px;
   color: var(--green);
   margin-bottom: 4px;
@@ -82,6 +84,7 @@
   display: flex;
   gap: 0;
   align-items: stretch;
+  justify-content: center;
 }
 .hp-bar-vertical {
   width: 14px;
@@ -98,68 +101,83 @@
   width: 100%;
   background: var(--green);
   border-radius: 0 0 2px 2px;
-  transition: height 0.3s ease;
+  transition: height 1.2s ease-out;
+}
+.hp-bar-hit {
+  animation: hp-jiggle 0.6s ease-in-out 3;
+}
+@keyframes hp-jiggle {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-3px); }
+  40% { transform: translateX(3px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(1px); }
 }
 .hp-bar-vertical-fill.hp-low {
   background: var(--red);
 }
 .hp-bar-vertical-fill.enemy {
-  background: var(--red);
+  background: var(--green);
 }
 .player-below-avatar {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   width: 100%;
   margin-top: 10px;
+  align-items: center;
 }
 .player-name-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.5rem;
+  justify-content: center;
 }
 .player-stat-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 14px;
-  font-size: 11px;
-  letter-spacing: 1px;
+  gap: 2px 12px;
+  font-size: 0.45rem;
+  letter-spacing: 0.5px;
   white-space: nowrap;
+  justify-content: center;
 }
 .char-avatar-wrap,
 .enemy-avatar-wrap {
-  width: calc(100vh / 6);
-  height: calc(100vh / 6);
+  width: min(60vw, 240px);
+  height: min(60vw, 240px);
   border-radius: 4px;
   overflow: hidden;
   flex-shrink: 0;
+  margin: 0 auto;
 }
 .char-avatar-wrap {
-  border: 2px solid #f0a030;
-  background: #445ee5;
+  border: 2px solid var(--border);
+  background: #000;
 }
 .enemy-avatar-wrap {
-  border: 2px solid #f04040;
-  background: #a050f0;
+  border: 2px solid var(--border);
+  background: #000;
 }
 .char-avatar {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 20%;
-  scale: 1.4;
+  image-rendering: pixelated;
 }
 .char-name {
-  font-size: 11px;
+  font-size: 0.5rem;
   font-weight: 800;
-  letter-spacing: 2px;
+  letter-spacing: 1px;
   text-transform: uppercase;
 }
 .char-hp {
-  font-size: 11px;
+  font-size: 0.5rem;
   font-weight: 700;
   color: var(--text);
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
 }
 .char-row {
   display: flex;
@@ -175,7 +193,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 1.15rem;
   font-weight: 800;
   flex-shrink: 0;
 }
@@ -189,14 +207,14 @@
 .bar-label {
   display: flex;
   justify-content: space-between;
-  font-size: 9px;
+  font-size: 0.65rem;
   letter-spacing: 1px;
 }
 .bar-label-right {
   color: var(--green-dim);
   font-weight: 700;
   letter-spacing: 1.5px;
-  font-size: 8px;
+  font-size: 0.6rem;
 }
 .bar-track-lg {
   height: 8px;
@@ -204,14 +222,14 @@
 .char-stats {
   display: flex;
   gap: 8px;
-  font-size: 9px;
+  font-size: 0.65rem;
   color: var(--green-dim);
   letter-spacing: 0.5px;
 }
 .char-items {
   display: flex;
   gap: 8px;
-  font-size: 9px;
+  font-size: 0.65rem;
   color: var(--green-dim);
   margin-top: 4px;
 }
@@ -236,7 +254,73 @@
   100% { transform: rotate(-8deg); }
 }
 
-/* --- Top row: Player + Enemy --- */
+/* --- Tap hint --- */
+
+.tap-hint {
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--green);
+  text-shadow: 0 0 8px var(--green);
+  text-align: center;
+  animation: tap-pulse 1.5s ease-in-out infinite;
+  pointer-events: none;
+}
+.tap-hint.filling {
+  color: var(--green-dim);
+  text-shadow: none;
+  animation: none;
+}
+@keyframes tap-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* --- Main view (centered single panel) --- */
+
+.main-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.centered-panel {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+.centered-panel > .panel {
+  width: 100%;
+}
+.avatar-anchor {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+.tap-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 12px;
+}
+.log-view .battle-log {
+  flex: 1;
+}
+.stack-view {
+  overflow-y: auto;
+}
+.stack-view > .panel {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+}
+
+/* --- Top row (legacy, kept for reference) --- */
 
 .top-row {
   display: flex;
@@ -259,7 +343,7 @@
 table.stats {
   width: 100%;
   border-collapse: collapse;
-  font-size: 10px;
+  font-size: 0.7rem;
 }
 table.stats th,
 table.stats td {
@@ -295,7 +379,7 @@ table.stats th {
 }
 
 .footnote {
-  font-size: 8px;
+  font-size: 0.6rem;
   color: var(--green-dim);
   margin-top: 1px;
 }
@@ -303,20 +387,18 @@ table.stats th {
 /* --- Battle arena (stack trees) --- */
 
 .canvas-panel {
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: calc(100vh / 3);
-  overflow-y: auto;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   padding: 0;
   border: none;
   background: transparent;
   position: relative;
+  width: 100%;
 }
 .canvas-panel > .label {
   padding: 3px 8px;
-  font-size: 8px;
+  font-size: 0.6rem;
   color: var(--green-dim);
   letter-spacing: 1.5px;
   border-bottom: 1px solid var(--border);
@@ -338,9 +420,7 @@ table.stats th {
 }
 
 .stack-tree-wrap {
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: visible;
   border: 2px solid var(--border);
   background: #080e08;
   display: flex;
@@ -351,12 +431,12 @@ table.stats th {
   z-index: 1;
 }
 .stack-tree-enemy {
-  flex: 1 1 0;
+  flex: 1;
   justify-content: flex-end;
-  border-color: #4a2020;
+  border-color: var(--border);
 }
 .stack-tree-player {
-  flex: 1 1 0;
+  flex: 1;
   border-color: #204a20;
 }
 .stack-tree-divider {
@@ -374,14 +454,16 @@ table.stats th {
   background: var(--border);
 }
 .stack-tree-vs {
-  font-size: 12px;
+  font-size: 0.8rem;
   font-weight: 800;
   letter-spacing: 4px;
   color: var(--yellow);
 }
 .stack-tree-svg {
   display: block;
-  max-width: 100%;
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
   user-select: none;
 }
 
@@ -411,14 +493,14 @@ table.stats th {
   border-top: 8px solid var(--red);
 }
 .enemy-taunt-name {
-  font-size: 9px;
+  font-size: 0.65rem;
   font-weight: 800;
   letter-spacing: 2px;
   text-transform: uppercase;
   color: var(--red);
 }
 .enemy-taunt-text {
-  font-size: 13px;
+  font-size: 0.85rem;
   font-weight: 700;
   font-style: italic;
   color: #ffa0a0;
@@ -434,12 +516,53 @@ table.stats th {
   50% { content: ".."; }
   75% { content: "..."; }
 }
+
+.enemy-curse-screen {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: curse-fade-in 0.5s ease;
+}
+.enemy-curse-bubble {
+  font-size: 1rem;
+  padding: 16px 28px;
+  animation: curse-shake 0.3s ease;
+}
+@keyframes curse-fade-in {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes curse-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-2px); }
+  80% { transform: translateX(2px); }
+}
 .orb-glow-ring {
   animation: orb-pulse 2s ease-in-out infinite;
 }
 @keyframes orb-pulse {
   0%, 100% { opacity: 0.15; }
   50% { opacity: 0.4; }
+}
+.orb-removing {
+  animation: orb-fade-out 2s ease-in forwards;
+}
+@keyframes orb-fade-out {
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-60px); }
+}
+.orb-settled {
+  transition: transform 0.6s ease-in-out;
+}
+.orb-evicting {
+  animation: orb-evict 1.5s ease-out forwards;
+}
+@keyframes orb-evict {
+  0% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-60px); }
 }
 .stack-tree-branch {
   cursor: pointer;
@@ -471,18 +594,18 @@ table.stats th {
   display: inline-block;
   padding: 1px 4px;
   border: 1px solid rgba(255,255,255,0.2);
-  font-size: 8px;
+  font-size: 0.6rem;
   font-weight: 700;
   letter-spacing: 0.5px;
 }
 .stack-chip-result {
-  font-size: 9px;
+  font-size: 0.65rem;
   padding: 2px 6px;
   border: 2px solid var(--green);
   box-shadow: 0 0 6px var(--green);
 }
 .stack-op {
-  font-size: 8px;
+  font-size: 0.6rem;
   color: var(--green-dim);
 }
 .stack-op-group {
@@ -510,7 +633,7 @@ table.stats th {
   border-right: none;
 }
 .stack-power-label {
-  font-size: 8px;
+  font-size: 0.6rem;
   color: var(--green-dim);
   margin-top: 1px;
   text-align: right;
@@ -533,9 +656,9 @@ table.stats th {
 
 .attack-chips {
   display: flex;
-  gap: 12px;
+  gap: 16px;
   justify-content: center;
-  padding: 8px;
+  padding: 14px 8px;
   flex-shrink: 0;
   z-index: 2;
 }
@@ -551,11 +674,11 @@ table.stats th {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 6px 10px;
-  border: 2px solid var(--chip-color);
+  gap: 6px;
+  padding: 12px 16px;
+  border: 3px solid var(--chip-color);
   color: var(--chip-color);
-  font-size: 11px;
+  font-size: 0.5rem;
   white-space: nowrap;
   background: #0a120a;
 }
@@ -582,6 +705,15 @@ table.stats th {
 .attack-chip-off {
   opacity: 0.2;
 }
+.attack-chip-almost {
+  opacity: 1;
+  animation: chip-flash 0.5s ease-in-out 4;
+  pointer-events: none;
+}
+@keyframes chip-flash {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.8; }
+}
 
 .attack-chip-clickable:hover > .attack-chip:last-child {
   filter: brightness(1.4);
@@ -598,7 +730,7 @@ table.stats th {
 
 .attack-chip-tag {
   font-weight: 700;
-  font-size: 8px;
+  font-size: 0.6rem;
   opacity: 0.7;
 }
 
@@ -616,9 +748,9 @@ table.stats th {
   gap: 4px;
 }
 .battle-log-entry {
-  padding: 4px 12px;
+  padding: 6px 12px;
   border: 1px solid;
-  font-size: 11px;
+  font-size: 0.45rem;
   font-weight: 800;
   font-family: inherit;
   letter-spacing: 2px;
@@ -673,7 +805,7 @@ table.stats th {
 /* --- Combat log --- */
 
 #log {
-  font-size: 9px;
+  font-size: 0.65rem;
   line-height: 1.4;
   flex: 1 1 auto;
   min-height: 0;
@@ -701,7 +833,7 @@ table.stats th {
   color: var(--green);
   border: 2px solid var(--green-dim);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 0.8rem;
   font-weight: 800;
   letter-spacing: 2px;
   padding: 10px 8px;
@@ -754,7 +886,7 @@ table.stats th {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 9px;
+  font-size: 0.65rem;
   border-bottom: 1px dashed var(--border);
   padding-bottom: 2px;
   gap: 4px;
@@ -766,7 +898,7 @@ table.stats th {
 .stance-tag {
   padding: 0px 4px;
   border: 1px solid var(--border);
-  font-size: 8px;
+  font-size: 0.6rem;
   flex-shrink: 0;
 }
 .stance-tag.Hyle { color: var(--orange); border-color: var(--orange); }
@@ -776,21 +908,23 @@ table.stats th {
 /* --- Toasts --- */
 
 .toast-stack {
-  position: fixed;
-  inset: 0;
+  position: absolute;
+  top: 60px;
+  left: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 6px;
-  z-index: 1000;
+  padding: 8px;
   pointer-events: none;
+  z-index: 100;
 }
 
 .toast {
   padding: 8px 20px;
   border: 2px solid;
-  font-size: 14px;
+  font-size: 0.5rem;
   font-weight: 800;
   font-family: inherit;
   letter-spacing: 2px;
@@ -880,7 +1014,7 @@ table.stats th {
 }
 
 .modal-detail {
-  font-size: 10px;
+  font-size: 0.7rem;
   color: var(--green-dim);
   margin: 0 0 20px;
   line-height: 1.6;
@@ -892,7 +1026,7 @@ table.stats th {
   color: var(--orange);
   border: 2px solid var(--orange);
   padding: 10px 28px;
-  font-size: 12px;
+  font-size: 0.8rem;
   font-weight: 800;
   font-family: inherit;
   letter-spacing: 2px;
@@ -906,7 +1040,7 @@ table.stats th {
 }
 
 .modal-oneshot {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 800;
   letter-spacing: 4px;
   color: var(--yellow);
@@ -914,7 +1048,7 @@ table.stats th {
   margin-bottom: 8px;
 }
 .modal-mastery {
-  font-size: 12px;
+  font-size: 0.8rem;
   font-weight: 800;
   letter-spacing: 3px;
   color: var(--purple);
@@ -922,13 +1056,13 @@ table.stats th {
   margin-bottom: 8px;
 }
 .modal-xp {
-  font-size: 11px;
+  font-size: 0.75rem;
   color: var(--green);
   letter-spacing: 1px;
   margin-bottom: 6px;
 }
 .modal-levelup {
-  font-size: 14px;
+  font-size: 0.9rem;
   font-weight: 800;
   letter-spacing: 3px;
   color: var(--yellow);
@@ -940,7 +1074,7 @@ table.stats th {
   text-align: left;
 }
 .modal-stat-gain {
-  font-size: 10px;
+  font-size: 0.7rem;
   font-weight: 700;
   color: var(--green);
   letter-spacing: 1px;
@@ -949,14 +1083,14 @@ table.stats th {
 .modal-stat-reason {
   font-weight: 400;
   color: var(--green-dim);
-  font-size: 9px;
+  font-size: 0.65rem;
   margin-left: 4px;
 }
 .modal-xp-bar {
   margin-top: 10px;
 }
 .modal-xp-label {
-  font-size: 9px;
+  font-size: 0.65rem;
   color: var(--green-dim);
   letter-spacing: 1px;
 }
