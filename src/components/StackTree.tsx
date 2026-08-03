@@ -303,6 +303,16 @@ const TAUNTS = [
   "You call that a strategy?",
   "My turn. Try not to cry.",
   "Is that all you've got?",
+  "Pathetic. Watch and learn.",
+  "Your symmetry is broken.",
+  "I've seen reflections with more fight.",
+  "The group closes on you.",
+  "Every rotation brings you closer to defeat.",
+  "You think you can invert me?",
+  "Your stack crumbles like your resolve.",
+  "I'll reduce you to the identity.",
+  "That combo? Predictable.",
+  "The Klein Four laughs at your feeble edge.",
 ];
 
 function EnemyTaunt({ name }: { name: string }) {
