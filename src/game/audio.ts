@@ -43,6 +43,107 @@ export function playVictoryFanfare() {
   }
 }
 
+export function playHitSound() {
+  const ctx = getCtx();
+  const t = ctx.currentTime;
+  // Noise burst + low thud
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(200, t);
+  osc.frequency.exponentialRampToValueAtTime(60, t + 0.15);
+  g.gain.setValueAtTime(0.18, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+  osc.connect(g);
+  g.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.15);
+  // Click
+  playNote(ctx, 800, t, 0.03, 0.12, "square");
+}
+
+export function playEnemyHitSound() {
+  const ctx = getCtx();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(300, t);
+  osc.frequency.exponentialRampToValueAtTime(80, t + 0.12);
+  g.gain.setValueAtTime(0.15, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  osc.connect(g);
+  g.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.12);
+  playNote(ctx, 1200, t, 0.02, 0.08, "square");
+}
+
+export function playSpellSound() {
+  const ctx = getCtx();
+  const t = ctx.currentTime;
+  const vol = 0.10;
+  // Rising shimmer
+  playNote(ctx, 440, t, 0.12, vol, "sine");
+  playNote(ctx, 660, t + 0.06, 0.12, vol, "sine");
+  playNote(ctx, 880, t + 0.12, 0.15, vol, "sine");
+  playNote(ctx, 1320, t + 0.18, 0.2, vol * 0.6, "sine");
+}
+
+export function playHealSound() {
+  const ctx = getCtx();
+  const t = ctx.currentTime;
+  const vol = 0.10;
+  // Gentle ascending chime
+  playNote(ctx, 523.25, t, 0.2, vol, "sine");
+  playNote(ctx, 659.25, t + 0.12, 0.2, vol, "sine");
+  playNote(ctx, 783.99, t + 0.24, 0.3, vol, "sine");
+  playNote(ctx, 1046.5, t + 0.36, 0.35, vol * 0.7, "triangle");
+}
+
+export function playSyzygySound() {
+  const ctx = getCtx();
+  const t = ctx.currentTime;
+  const vol = 0.14;
+  // Dramatic chord burst
+  playNote(ctx, 261.63, t, 0.08, vol, "square");
+  playNote(ctx, 329.63, t, 0.08, vol, "square");
+  playNote(ctx, 392.00, t, 0.08, vol, "square");
+  // Rising sweep
+  playNote(ctx, 523.25, t + 0.1, 0.1, vol, "square");
+  playNote(ctx, 659.25, t + 0.1, 0.1, vol, "square");
+  playNote(ctx, 783.99, t + 0.1, 0.1, vol, "square");
+  // Impact
+  playNote(ctx, 1046.5, t + 0.22, 0.25, vol, "sawtooth");
+  playNote(ctx, 523.25, t + 0.22, 0.25, vol * 0.5, "sawtooth");
+}
+
+export function playShiftSound() {
+  const ctx = getCtx();
+  const t = ctx.currentTime;
+  // Short whoosh — descending tone
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = "triangle";
+  osc.frequency.setValueAtTime(600, t);
+  osc.frequency.exponentialRampToValueAtTime(300, t + 0.12);
+  g.gain.setValueAtTime(0.10, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  osc.connect(g);
+  g.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.12);
+}
+
+export function playSyzygyReadySound() {
+  const ctx = getCtx();
+  const t = ctx.currentTime;
+  const vol = 0.08;
+  // Two-note chime
+  playNote(ctx, 783.99, t, 0.15, vol, "sine");
+  playNote(ctx, 1046.5, t + 0.15, 0.25, vol, "sine");
+}
+
 export function playDefeatSound() {
   const ctx = getCtx();
   const t = ctx.currentTime;

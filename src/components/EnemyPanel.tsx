@@ -22,12 +22,19 @@ export default function EnemyPanel() {
   const elementColor = elemColor(e.element);
   const elemName = e.weapon.label(e.element);
   const justHit = state.phase === "enemy_avatar";
+  const isVictory = state.phase === "victory";
+  const isDefeat = state.phase === "defeat";
+  const isDying = state.phase === "enemy_dying";
+
+  let avatarSrc = "/enemy-avatar.png?v=3";
+  if (isVictory || isDying) avatarSrc = "/enemy-defeat.png";
+  if (isDefeat) avatarSrc = "/enemy-victory.png";
 
   return (
     <div className="panel enemy-panel">
       <div className="avatar-hp-row">
         <div className="enemy-avatar-wrap">
-          <img src="/enemy-avatar.png?v=3" alt={e.name} className="char-avatar" />
+          <img src={avatarSrc} alt={e.name} className="char-avatar" />
         </div>
         <div className={`hp-bar-vertical enemy${justHit ? " hp-bar-hit" : ""}`}>
           <div className="hp-bar-vertical-fill enemy" style={{ height: `${hpPercent}%` }} />

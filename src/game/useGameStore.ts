@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { useShallow } from "zustand/shallow";
 import type { GameState, D3Element, StackEntry, Weapon, VictoryReward, TurnPhase } from "./types";
-import { playVictoryFanfare, playDefeatSound } from "./audio";
+import { playVictoryFanfare, playDefeatSound, playHitSound, playEnemyHitSound, playSpellSound, playHealSound, playSyzygySound, playShiftSound, playSyzygyReadySound } from "./audio";
 import {
   createInitialState,
   heroAttack,
@@ -27,12 +27,13 @@ import {
   resolveAct,
   calculateVictoryReward,
   applyVictoryReward,
+  stackHasSyzygy,
 } from "./types";
 
 export interface Toast {
   id: number;
   text: string;
-  type: "buff" | "debuff" | "info";
+  type: "buff" | "debuff" | "info" | "warn";
 }
 
 let toastId = 0;
@@ -145,6 +146,22 @@ const useStore = create<StoreState>((set, get) => {
     }
   }
 
+  const SYZYGY_TOAST_MS = 2500;
+
+  function checkSyzygyUnlocked(prevCount: number, prevSyzygyUsed: boolean): boolean {
+    const s = get();
+    if (s.syzygyUsed) return false;
+    const wasAvailable = prevCount >= 3 && !prevSyzygyUsed && stackHasSyzygy(s.elementStack);
+    const nowAvailable = canSyzygy(s.elementStack, s.syzygyUsed, s.heroAttackCount);
+    const prevCouldBe = prevCount >= 3 && !prevSyzygyUsed;
+    if (nowAvailable && !prevCouldBe) {
+      pushToast("SYZYGY READY", "warn");
+      playSyzygyReadySound();
+      return true;
+    }
+    return false;
+  }
+
   function advanceToEnemyStack() {
     const s = get();
     if (s.phase !== "enemy_avatar") return;
@@ -185,14 +202,17 @@ const useStore = create<StoreState>((set, get) => {
       if (lastLog.action === "spell_heal") {
         const healedEnemy = newState.enemy.currentHp - s.enemy.currentHp;
         pushToast(`Enemy casts Heal +${healedEnemy} HP`, "info");
+        playHealSound();
       } else if (lastLog.action === "spell_damage") {
         const dmgToHero = s.hero.currentHp - newState.hero.currentHp;
         pushToast(`Enemy casts Spell ${dmgToHero} DMG`, "debuff");
+        playSpellSound();
         triggerShake();
       } else {
         const dmgToHero = s.hero.currentHp - newState.hero.currentHp;
         if (dmgToHero > 0) {
           pushToast(`Enemy attacks ${dmgToHero} DMG`, "debuff");
+          playEnemyHitSound();
           triggerShake();
         }
       }
@@ -221,6 +241,8 @@ const useStore = create<StoreState>((set, get) => {
     rotate: (steps = 1) => {
       const s = get();
       if (s.phase !== "player_stack" || s.sceneCallbacks?.isAnimating()) return;
+      const prevCount = s.heroAttackCount;
+      const prevSyzygyUsed = s.syzygyUsed;
       const newState = heroShiftElement(s, "rotate", steps);
       set({
         hero: newState.hero,
@@ -231,17 +253,21 @@ const useStore = create<StoreState>((set, get) => {
         lastActionSelfHeal: false,
       });
       showElementToasts(newState.elementStack);
+      playShiftSound();
       s.sceneCallbacks?.animateRotation(true);
       s.sceneCallbacks?.commitOfficial();
+      const syzygyDelay = checkSyzygyUnlocked(prevCount, prevSyzygyUsed) ? SYZYGY_TOAST_MS : 0;
       setTimeout(() => {
         set({ phase: "enemy_avatar" as TurnPhase });
         setTimeout(() => advanceToEnemyStack(), 3000);
-      }, 2000);
+      }, 2000 + syzygyDelay);
     },
 
     reflect: () => {
       const s = get();
       if (s.phase !== "player_stack" || s.sceneCallbacks?.isAnimating()) return;
+      const prevCount = s.heroAttackCount;
+      const prevSyzygyUsed = s.syzygyUsed;
       const newState = heroShiftElement(s, "reflect");
       set({
         hero: newState.hero,
@@ -252,12 +278,14 @@ const useStore = create<StoreState>((set, get) => {
         lastActionSelfHeal: false,
       });
       showElementToasts(newState.elementStack);
+      playShiftSound();
       s.sceneCallbacks?.animateReflect(true);
       s.sceneCallbacks?.commitOfficial();
+      const syzygyDelay = checkSyzygyUnlocked(prevCount, prevSyzygyUsed) ? SYZYGY_TOAST_MS : 0;
       setTimeout(() => {
         set({ phase: "enemy_avatar" as TurnPhase });
         setTimeout(() => advanceToEnemyStack(), 3000);
-      }, 2000);
+      }, 2000 + syzygyDelay);
     },
 
     unstack: () => {
@@ -288,20 +316,14 @@ const useStore = create<StoreState>((set, get) => {
     act: () => {
       const s = get();
       if (s.phase !== "player_stack") return;
-      const resolved = resolveAct(s.hero, s.elementStack, s.enemy, s.enemyStack, s.syzygyUsed, s.heroAttackCount);
-      if (resolved.kind === "combo") {
-        actions.syzygy();
-      } else if (resolved.kind === "magic") {
-        const magicAtk = s.hero.weapon.attacks.find((a) => a.kind === "magic");
-        if (magicAtk) actions.castSpell(magicAtk.key);
-      } else {
-        actions.attack();
-      }
+      actions.attack();
     },
 
     attack: () => {
       const s = get();
       if (s.phase !== "player_stack") return;
+      const prevCount = s.heroAttackCount;
+      const prevSyzygyUsed = s.syzygyUsed;
       const newState = heroAttack(s);
       const dmg = s.enemy.currentHp - newState.enemy.currentHp;
       const isEnd = newState.phase === "victory";
@@ -315,12 +337,14 @@ const useStore = create<StoreState>((set, get) => {
       });
       if (dmg > 0) {
         pushToast(`${dmg} DMG`, "debuff");
+        playHitSound();
         triggerShake();
       }
+      const syzygyDelay = !isEnd && checkSyzygyUnlocked(prevCount, prevSyzygyUsed) ? SYZYGY_TOAST_MS : 0;
       if (isEnd) {
         setTimeout(() => delayedEndPhase("victory", "VICTORY", "buff"), 3000);
       } else {
-        setTimeout(() => advanceToEnemyStack(), 3000);
+        setTimeout(() => advanceToEnemyStack(), 3000 + syzygyDelay);
       }
     },
 
@@ -343,6 +367,7 @@ const useStore = create<StoreState>((set, get) => {
       });
       if (dmg > 0) {
         pushToast(`SYZYGY ${dmg} DMG`, "buff");
+        playSyzygySound();
         triggerShake();
       }
       if (isEnd) {
@@ -372,12 +397,15 @@ const useStore = create<StoreState>((set, get) => {
         const healed = newState.hero.currentHp - s.hero.currentHp;
         if (healed > 0) {
           pushToast(`+${healed} HP`, "buff");
+          playHealSound();
         }
         setTimeout(() => {
           set({ phase: "enemy_avatar" as TurnPhase, lastActionSelfHeal: false });
           setTimeout(() => advanceToEnemyStack(), 3000);
         }, 1500);
       } else {
+        const prevCount = s.heroAttackCount;
+        const prevSyzygyUsed = s.syzygyUsed;
         set({
           hero: newState.hero,
           enemy: newState.enemy,
@@ -389,12 +417,14 @@ const useStore = create<StoreState>((set, get) => {
         const dmg = s.enemy.currentHp - newState.enemy.currentHp;
         if (dmg > 0) {
           pushToast(`${spell.name} ${dmg} DMG`, "debuff");
+          playSpellSound();
           triggerShake();
         }
+        const syzygyDelay = !isEnd && checkSyzygyUnlocked(prevCount, prevSyzygyUsed) ? SYZYGY_TOAST_MS : 0;
         if (isEnd) {
           setTimeout(() => delayedEndPhase("victory", "VICTORY", "buff"), 3000);
         } else {
-          setTimeout(() => advanceToEnemyStack(), 3000);
+          setTimeout(() => advanceToEnemyStack(), 3000 + syzygyDelay);
         }
       }
     },

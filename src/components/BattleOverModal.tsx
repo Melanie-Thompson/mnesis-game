@@ -13,6 +13,11 @@ export default function BattleOverModal() {
   return (
     <div className="modal-overlay" onClick={actions.startBattle}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <img
+          src={isVictory ? "/astra-victory.png" : "/astra-defeat.png?v=2"}
+          alt={isVictory ? "Victory" : "Defeat"}
+          className={`modal-battle-avatar ${isVictory ? "modal-victory-avatar" : "modal-defeat-avatar"}`}
+        />
         <div className={`modal-result ${isVictory ? "victory" : "defeat"}`}>
           {isVictory ? "VICTORY" : "DEFEAT"}
         </div>
