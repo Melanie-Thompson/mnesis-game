@@ -1,5 +1,5 @@
 import { effectiveAttack, effectiveDefense } from "../game/useGameStore";
-import { useGameState } from "../game/useGameStore";
+import { useGameState, useGameActions } from "../game/useGameStore";
 import { stancePower, SPELL_CATALOG } from "../game/types";
 
 
@@ -9,20 +9,28 @@ const ELEMENT_CSS: Record<number, string> = {
   2: "#a050f0",
 };
 
-export default function PlayerPanel() {
+export default function PlayerPanel({ index }: { index: number }) {
   const state = useGameState();
-  const h = state.hero;
+  const actions = useGameActions();
+  const h = state.heroes[index];
+  if (!h) return null;
   const hpPercent = Math.max(0, (h.currentHp / h.maxHp) * 100);
-  const stack = state.elementStack;
+  const stack = state.heroStacks[index];
   const elementColor = ELEMENT_CSS[h.element.r] || "#50e850";
   const elemName = h.weapon.label(h.element);
   const justHit = state.phase === "player_hit";
+  const isDead = h.currentHp <= 0;
+  const isActive = state.activeHeroIndex === index;
+  const canSelect = (state.phase === "player_avatar" || state.phase === "player_stack") && !isDead;
 
   return (
-    <div className="panel player-panel">
+    <div
+      className={`panel player-panel${isActive ? " hero-active" : ""}${isDead ? " hero-dead" : ""}`}
+      style={{ cursor: canSelect ? "pointer" : "default" }}
+    >
       <div className="avatar-hp-row">
         <div className="char-avatar-wrap">
-          <img src="/astra-avatar.png?v=3" alt="Astra" className="char-avatar" />
+          <img src={h.assets.avatar} alt={h.name} className="char-avatar" />
         </div>
         <div className={`hp-bar-vertical${justHit ? " hp-bar-hit" : ""}`}>
           <div className={`hp-bar-vertical-fill${hpPercent < 30 ? " hp-low" : ""}`} style={{ height: `${hpPercent}%` }} />
@@ -50,6 +58,7 @@ export default function PlayerPanel() {
           })}
         </div>
       </div>
+      {isActive && !isDead && <div className="active-indicator">ACTIVE</div>}
     </div>
   );
 }

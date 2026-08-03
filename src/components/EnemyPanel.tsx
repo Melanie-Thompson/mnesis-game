@@ -1,4 +1,4 @@
-import { useGameState } from "../game/useGameStore";
+import { useGameState, useGameActions } from "../game/useGameStore";
 import { effectiveAttack, effectiveDefense } from "../game/useGameStore";
 import { stancePower } from "../game/types";
 
@@ -14,24 +14,35 @@ function elemColor(e: { r: number; s: number }): string {
   return V4_COLOR[`${e.r},${e.s}`] || "#90b0a0";
 }
 
-export default function EnemyPanel() {
+export default function EnemyPanel({ index }: { index: number }) {
   const state = useGameState();
-  const e = state.enemy;
+  const actions = useGameActions();
+  const e = state.enemies[index];
+  if (!e) return null;
   const hpPercent = Math.max(0, (e.currentHp / e.maxHp) * 100);
-  const stack = state.enemyStack;
+  const stack = state.enemyStacks[index];
   const elementColor = elemColor(e.element);
   const elemName = e.weapon.label(e.element);
   const justHit = state.phase === "enemy_avatar";
   const isVictory = state.phase === "victory";
   const isDefeat = state.phase === "defeat";
   const isDying = state.phase === "enemy_dying";
+  const isDead = e.currentHp <= 0;
+  const isTargeted = state.targetIndex === index;
 
-  let avatarSrc = "/enemy-avatar.png?v=3";
-  if (isVictory || isDying) avatarSrc = "/enemy-defeat.png";
-  if (isDefeat) avatarSrc = "/enemy-victory.png";
+  const assets = e.assets;
+  let avatarSrc = assets.avatar;
+  if (isVictory || isDying || isDead) avatarSrc = assets.avatarDefeat;
+  if (isDefeat) avatarSrc = assets.avatarVictory;
+
+  const canTarget = (state.phase === "player_stack" || state.phase === "player_avatar") && !isDead;
 
   return (
-    <div className="panel enemy-panel">
+    <div
+      className={`panel enemy-panel${isTargeted ? " enemy-targeted" : ""}${isDead ? " enemy-dead" : ""}`}
+      onClick={() => canTarget && actions.setTarget(index)}
+      style={{ cursor: canTarget ? "pointer" : "default" }}
+    >
       <div className="avatar-hp-row">
         <div className="enemy-avatar-wrap">
           <img src={avatarSrc} alt={e.name} className="char-avatar" />
@@ -53,6 +64,7 @@ export default function EnemyPanel() {
           <span>SPD {e.speed}</span>
         </div>
       </div>
+      {isTargeted && !isDead && <div className="target-indicator">TARGET</div>}
     </div>
   );
 }

@@ -336,9 +336,9 @@ export default function StackTree() {
   const actions = useGameActions();
   const enemyCurse = state.enemyCurse;
   const unstacking = state.unstackingTop;
-  const h = state.hero;
-  const stack = state.elementStack;
-  const enemyStack = state.enemyStack;
+  const hi = state.activeHeroIndex;
+  const h = state.heroes[hi];
+  const stack = state.heroStacks[hi];
   const [hoveredBranch, setHoveredBranch] = useState<"rotate" | "reflect" | null>(null);
   const [hoveredPlayerOrb, setHoveredPlayerOrb] = useState<number | null>(null);
   const canAct = state.phase === "player_stack";
@@ -399,21 +399,37 @@ export default function StackTree() {
       {isDying && enemyCurse && (
         <div className="enemy-curse-screen">
           <div className="enemy-taunt-bubble enemy-curse-bubble">
-            <span className="enemy-taunt-name">{state.enemy.name}</span>
+            <span className="enemy-taunt-name">{state.enemies[state.activeEnemyIndex]?.name ?? "Enemy"}</span>
             <span className="enemy-taunt-text">{enemyCurse}</span>
           </div>
         </div>
       )}
 
       {/* Enemy tree — upward */}
-      {isEnemyTurn && (<>
-        <div className="label" style={{ color: "#f04040" }}>
-          {state.enemy.weapon.name} [{state.enemy.weapon.groupName}] — {state.enemy.name}
-        </div>
-        <div className="stack-tree-wrap stack-tree-enemy">
-          <EnemyTree stack={enemyStack} enemy={state.enemy} />
-        </div>
-      </>)}
+      {isEnemyTurn && (() => {
+        const activeE = state.enemies[state.activeEnemyIndex];
+        const activeES = state.enemyStacks[state.activeEnemyIndex];
+        const aliveCount = state.enemies.filter(en => en.currentHp > 0).length;
+        const aliveIdx = state.enemies.filter((en, i) => en.currentHp > 0 && i <= state.activeEnemyIndex).length;
+        return (<>
+          <div className="stack-enemy-avatar">
+            <img src={activeE.assets.avatar} alt={activeE.name} className="stack-enemy-avatar-img" />
+            <div className="stack-enemy-avatar-info">
+              <span className="stack-enemy-avatar-name">{activeE.name}</span>
+              <span className="stack-enemy-avatar-hp">{activeE.currentHp}/{activeE.maxHp}</span>
+            </div>
+          </div>
+          <div className="label enemy-stack-label" style={{ color: "#f04040" }}>
+            <span className="enemy-turn-badge">{aliveIdx}/{aliveCount}</span>
+            <span>{activeE.weapon.name} [{activeE.weapon.groupName}]</span>
+          </div>
+          <div className="stack-tree-wrap stack-tree-enemy" style={{
+            background: `url("${activeE.assets.weaponBg}") center center / 60% auto no-repeat #080e08`,
+          }}>
+            <EnemyTree stack={activeES} enemy={activeE} />
+          </div>
+        </>);
+      })()}
 
       {/* Divider */}
       {!isDying && (
@@ -423,14 +439,18 @@ export default function StackTree() {
       )}
 
       {/* Enemy taunt — below VS */}
-      {isEnemyTurn && <EnemyTaunt name={state.enemy.name} />}
+      {isEnemyTurn && <EnemyTaunt name={state.enemies[state.activeEnemyIndex].name} />}
 
       {/* Player tree — downward */}
       {(isPlayerTurn || (!isEnemyTurn && !isDying)) && (<>
-        <div className="label" style={{ color: "#50e850" }}>
-          {h.weapon.name} [{h.weapon.groupName}] — click a branch to shift
+        <div className="label hero-stack-label" style={{ color: "#50e850" }}>
+          <span className="hero-turn-badge">{hi + 1}/{state.heroes.length}</span>
+          <span>{h.name} — {h.weapon.name} [{h.weapon.groupName}]</span>
         </div>
-      <div className="stack-tree-wrap stack-tree-player">
+      <div className="stack-tree-wrap stack-tree-player" style={{
+        background: `url("${h.assets.weaponBg}") center center / 60% auto no-repeat #080e08`,
+      }}>
+        <img src={h.assets.avatar} alt={h.name} className="stack-avatar-bg" />
         <svg
           viewBox={`0 0 ${treeWidth} ${playerHeight}`}
           className="stack-tree-svg"
@@ -618,8 +638,8 @@ export default function StackTree() {
         </svg>
         {isPlayerTurn && (
           <AttackSidebar
-            hero={h} enemy={state.enemy} heroStack={stack} enemyStack={enemyStack}
-            syzygyUsed={state.syzygyUsed} heroAttackCount={state.heroAttackCount} canAct={canAct}
+            hero={h} enemy={state.enemies[state.targetIndex]} heroStack={stack} enemyStack={state.enemyStacks[state.targetIndex]}
+            syzygyUsed={state.syzygyUsedFlags[hi]} heroAttackCount={state.heroAttackCounts[hi]} canAct={canAct}
             onAttack={() => actions.act()} onCastSpell={(key) => actions.castSpell(key)}
             onSyzygy={() => actions.syzygy()}
           />

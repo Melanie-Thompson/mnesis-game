@@ -505,6 +505,13 @@ export function getElementalSpellModifier(
 
 // --- Character Stats ---
 
+export interface HeroAssets {
+  avatar: string;
+  avatarVictory: string;
+  avatarDefeat: string;
+  weaponBg: string;
+}
+
 export interface CharacterStats {
   name: string;
   maxHp: number;
@@ -519,6 +526,7 @@ export interface CharacterStats {
   items: ItemEntry[];
   xp: number;
   level: number;
+  assets: HeroAssets;
 }
 
 export function totalAttackModifier(c: CharacterStats, stack?: StackEntry[]): number {
@@ -555,6 +563,13 @@ export function effectiveDefense(c: CharacterStats, stack?: StackEntry[]): numbe
 
 export type AIStance = "aggressive" | "defensive" | "balanced" | "stationary";
 
+export interface EnemyAssets {
+  avatar: string;
+  avatarVictory: string;
+  avatarDefeat: string;
+  weaponBg: string;
+}
+
 export interface EnemyStats extends CharacterStats {
   enemyType: string;
   aiStance: AIStance;
@@ -566,15 +581,15 @@ export interface EnemyStats extends CharacterStats {
   spellsKnown: string[];
   healCooldown: number;
   healCooldownMax: number;
+  assets: EnemyAssets;
 }
 
-export function spawnBoss(name: string = "Pneuma Lord"): EnemyStats {
-  return {
-    name,
+const ENEMY_ROSTER: Record<string, Omit<EnemyStats, "currentHp" | "xp">> = {
+  "Pneuma Lord": {
+    name: "Pneuma Lord",
     enemyType: "Boss",
     level: 10,
     maxHp: 150,
-    currentHp: 150,
     attack: 22,
     attackModifier: 1.0,
     defense: 18,
@@ -583,7 +598,6 @@ export function spawnBoss(name: string = "Pneuma Lord"): EnemyStats {
     element: { r: 0, s: 0 },
     weapon: WEAPON_V4,
     items: [],
-    xp: 0,
     aiStance: "balanced",
     shiftChance: 0.6,
     maxStackDepth: 5,
@@ -592,7 +606,47 @@ export function spawnBoss(name: string = "Pneuma Lord"): EnemyStats {
     spellsKnown: ["arcane_bolt", "renew"],
     healCooldown: 0,
     healCooldownMax: 3,
-  };
+    assets: {
+      avatar: "/enemy-avatar.png",
+      avatarVictory: "/enemy-victory.png",
+      avatarDefeat: "/enemy-defeat.png",
+      weaponBg: "/klein-mace.png",
+    },
+  },
+  "Hyle Sentinel": {
+    name: "Hyle Sentinel",
+    enemyType: "Boss",
+    level: 8,
+    maxHp: 120,
+    attack: 18,
+    attackModifier: 1.0,
+    defense: 22,
+    defenseModifier: 1.0,
+    speed: 9,
+    element: { r: 1, s: 0 },
+    weapon: WEAPON_V4,
+    items: [],
+    aiStance: "defensive",
+    shiftChance: 0.4,
+    maxStackDepth: 4,
+    xpYield: 400,
+    goldYield: 250,
+    spellsKnown: ["renew"],
+    healCooldown: 0,
+    healCooldownMax: 2,
+    assets: {
+      avatar: "/enemy-avatar.png",
+      avatarVictory: "/enemy-victory.png",
+      avatarDefeat: "/enemy-defeat.png",
+      weaponBg: "/klein-mace.png",
+    },
+  },
+};
+
+export function spawnBoss(name: string = "Pneuma Lord"): EnemyStats {
+  const template = ENEMY_ROSTER[name];
+  if (!template) throw new Error(`Unknown enemy: ${name}`);
+  return { ...template, currentHp: template.maxHp, xp: 0 };
 }
 
 // --- Battle Logic ---
@@ -645,23 +699,80 @@ export interface VictoryReward {
   itemDrops: ItemDrop[];
 }
 
+export interface HitCard {
+  id: number;
+  avatarSrc: string;
+  name: string;
+  amount: number;
+  hpBefore: number;
+  hpAfter: number;
+  maxHp: number;
+  isEnemy: boolean;
+  isHeal: boolean;
+}
+
 export interface GameState {
   turn: number;
+  round: number;
   phase: TurnPhase;
-  hero: CharacterStats;
-  enemy: EnemyStats;
+  heroes: CharacterStats[];
+  heroStacks: StackEntry[][];
+  heroAttackCounts: number[];
+  syzygyUsedFlags: boolean[];
+  activeHeroIndex: number;
+  heroActedThisRound: boolean[];
+  enemies: EnemyStats[];
   log: LogEntry[];
-  elementStack: StackEntry[];
-  enemyStack: StackEntry[];
-  syzygyUsed: boolean;
+  enemyStacks: StackEntry[][];
+  enemyActedThisRound: boolean[];
   killKind: AttackKind | null;
-  heroAttackCount: number;
   victoryReward: VictoryReward | null;
   lastActionSelfHeal: boolean;
   shaking: boolean;
   toasts: { id: number; text: string; type: "buff" | "debuff" | "info" | "warn" }[];
   enemyCurse: string | null;
   unstackingTop: boolean;
+  targetIndex: number;
+  activeEnemyIndex: number;
+  hitCard: HitCard | null;
+}
+
+export function allEnemiesDead(enemies: EnemyStats[]): boolean {
+  return enemies.every(e => e.currentHp <= 0);
+}
+export function allHeroesDead(heroes: CharacterStats[]): boolean {
+  return heroes.every(h => h.currentHp <= 0);
+}
+
+export function firstAliveEnemyIndex(enemies: EnemyStats[]): number {
+  const idx = enemies.findIndex(e => e.currentHp > 0);
+  return idx >= 0 ? idx : 0;
+}
+export function firstAliveHeroIndex(heroes: CharacterStats[]): number {
+  const idx = heroes.findIndex(h => h.currentHp > 0);
+  return idx >= 0 ? idx : 0;
+}
+
+// Convenience accessors
+export function activeHero(state: GameState): CharacterStats {
+  return state.heroes[state.activeHeroIndex];
+}
+export function activeHeroStack(state: GameState): StackEntry[] {
+  return state.heroStacks[state.activeHeroIndex];
+}
+
+export function updateHero(state: GameState, index: number, hero: CharacterStats): CharacterStats[] {
+  return state.heroes.map((h, i) => i === index ? hero : h);
+}
+export function updateHeroStack(state: GameState, index: number, stack: StackEntry[]): StackEntry[][] {
+  return state.heroStacks.map((s, i) => i === index ? stack : s);
+}
+
+export function updateEnemy(state: GameState, index: number, enemy: EnemyStats): EnemyStats[] {
+  return state.enemies.map((e, i) => i === index ? enemy : e);
+}
+export function updateEnemyStack(state: GameState, index: number, stack: StackEntry[]): StackEntry[][] {
+  return state.enemyStacks.map((s, i) => i === index ? stack : s);
 }
 
 let logIdCounter = 0;
@@ -675,12 +786,10 @@ export function makeLogEntry(
   return { id: logIdCounter++, turn, actor, action, message };
 }
 
-export function createInitialState(): GameState {
-  logIdCounter = 0;
-  const hero: CharacterStats = {
+export const HERO_ROSTER: Record<string, Omit<CharacterStats, "currentHp" | "xp">> = {
+  "Astra": {
     name: "Astra",
     maxHp: 150,
-    currentHp: 150,
     attack: 22,
     attackModifier: 1.0,
     defense: 14,
@@ -692,30 +801,75 @@ export function createInitialState(): GameState {
       { spellKey: "renew", count: 3 },
       { spellKey: "arcane_bolt", count: 5 },
     ],
-    xp: 0,
     level: 1,
-  };
-  const enemy = spawnBoss("Pneuma Lord");
+    assets: {
+      avatar: "/astra-avatar.png?v=3",
+      avatarVictory: "/astra-victory.png",
+      avatarDefeat: "/astra-defeat.png?v=2",
+      weaponBg: "/prismatic-edge.png",
+    },
+  },
+  "Sable": {
+    name: "Sable",
+    maxHp: 110,
+    attack: 18,
+    attackModifier: 1.0,
+    defense: 10,
+    defenseModifier: 1.0,
+    speed: 18,
+    element: { r: 2, s: 0 },
+    weapon: WEAPON_D3,
+    items: [
+      { spellKey: "arcane_bolt", count: 7 },
+      { spellKey: "renew", count: 2 },
+    ],
+    level: 1,
+    assets: {
+      avatar: "/sable-avatar.png",
+      avatarVictory: "/astra-victory.png",
+      avatarDefeat: "/astra-defeat.png?v=2",
+      weaponBg: "/prismatic-edge.png",
+    },
+  },
+};
+
+export function spawnHero(name: string): CharacterStats {
+  const template = HERO_ROSTER[name];
+  if (!template) throw new Error(`Unknown hero: ${name}`);
+  return { ...template, currentHp: template.maxHp, xp: 0 };
+}
+
+export function createInitialState(): GameState {
+  logIdCounter = 0;
+  const heroes = [spawnHero("Astra"), spawnHero("Sable")];
+  const enemies = [spawnBoss("Pneuma Lord"), spawnBoss("Hyle Sentinel")];
 
   return {
     turn: 1,
+    round: 1,
     phase: "player_avatar",
-    hero,
-    enemy,
+    heroes,
+    heroStacks: heroes.map(() => [] as StackEntry[]),
+    heroAttackCounts: heroes.map(() => 0),
+    syzygyUsedFlags: heroes.map(() => false),
+    activeHeroIndex: 0,
+    heroActedThisRound: heroes.map(() => false),
+    enemies,
     log: [
-      makeLogEntry(1, "system", "start", `Battle started! ${hero.name} VS ${enemy.name}`),
+      makeLogEntry(1, "system", "start", `Battle started! ${heroes.map(h => h.name).join(" & ")} VS ${enemies.map(e => e.name).join(" & ")}`),
     ],
-    elementStack: [],
-    enemyStack: [],
-    syzygyUsed: false,
+    enemyStacks: enemies.map(() => [] as StackEntry[]),
+    enemyActedThisRound: enemies.map(() => false),
     killKind: null,
-    heroAttackCount: 0,
     victoryReward: null,
     lastActionSelfHeal: false,
     shaking: false,
     toasts: [],
     enemyCurse: null,
     unstackingTop: false,
+    targetIndex: 0,
+    activeEnemyIndex: 0,
+    hitCard: null,
   };
 }
 
@@ -724,18 +878,19 @@ export function xpForLevel(level: number): number {
 }
 
 export function calculateVictoryReward(
-  hero: CharacterStats,
-  enemy: EnemyStats,
-  stack: StackEntry[],
+  heroes: CharacterStats[],
+  enemies: EnemyStats[],
+  heroStacks: StackEntry[][],
   killKind: AttackKind | null,
-  heroAttackCount: number,
+  heroAttackCounts: number[],
 ): VictoryReward {
-  const xpGained = enemy.xpYield;
-  const goldGained = enemy.goldYield;
-  const newXp = hero.xp + xpGained;
-  const xpNeeded = xpForLevel(hero.level);
+  const leader = heroes[0];
+  const xpGained = enemies.reduce((sum, e) => sum + e.xpYield, 0);
+  const goldGained = enemies.reduce((sum, e) => sum + e.goldYield, 0);
+  const newXp = leader.xp + xpGained;
+  const xpNeeded = xpForLevel(leader.level);
   const levelUp = newXp >= xpNeeded;
-  const newLevel = levelUp ? hero.level + 1 : hero.level;
+  const newLevel = levelUp ? leader.level + 1 : leader.level;
 
   const statGains: StatGain[] = [];
 
@@ -745,7 +900,8 @@ export function calculateVictoryReward(
     statGains.push({ stat: "defense", amount: 1, reason: "Level up" });
   }
 
-  const oneShot = heroAttackCount === 1;
+  const totalAttackCount = heroAttackCounts.reduce((a, b) => a + b, 0);
+  const oneShot = totalAttackCount === 1;
   if (oneShot) {
     if (killKind === "physical") {
       statGains.push({ stat: "attack", amount: 3, reason: "One-shot kill (physical)" });
@@ -758,16 +914,16 @@ export function calculateVictoryReward(
     }
   }
 
-  // Dominant element bonus: if >60% of stack entries land on the same stance
+  const allStacks = heroStacks.flat();
   let dominantElement: string | null = null;
-  if (stack.length >= 3) {
+  if (allStacks.length >= 3) {
     const counts = [0, 0, 0];
-    for (const entry of stack) {
+    for (const entry of allStacks) {
       counts[entry.result.r]++;
     }
     const maxCount = Math.max(...counts);
     const maxR = counts.indexOf(maxCount);
-    if (maxCount / stack.length > 0.6) {
+    if (maxCount / allStacks.length > 0.6) {
       const name = STATE_NAMES[maxR];
       dominantElement = name;
       if (maxR === 0) {
@@ -783,24 +939,26 @@ export function calculateVictoryReward(
   }
 
   const itemDrops: ItemDrop[] = [];
-  // Drop spells the hero already has (if under 4)
-  for (const item of hero.items) {
-    if (item.count < 4) {
-      const dropChance = item.count <= 1 ? 0.5 : item.count <= 2 ? 0.35 : 0.2;
-      if (Math.random() < dropChance) {
-        const spell = SPELL_CATALOG[item.spellKey];
-        itemDrops.push({ spellKey: item.spellKey, name: spell?.name ?? item.spellKey });
+  for (const hero of heroes) {
+    for (const item of hero.items) {
+      if (item.count < 4 && !itemDrops.some(d => d.spellKey === item.spellKey)) {
+        const dropChance = item.count <= 1 ? 0.5 : item.count <= 2 ? 0.35 : 0.2;
+        if (Math.random() < dropChance) {
+          const spell = SPELL_CATALOG[item.spellKey];
+          itemDrops.push({ spellKey: item.spellKey, name: spell?.name ?? item.spellKey });
+        }
       }
     }
   }
-  // Drop spells from enemy's known spells that the hero doesn't have yet
-  for (const key of enemy.spellsKnown) {
-    const alreadyHas = hero.items.some(i => i.spellKey === key);
-    const alreadyDropped = itemDrops.some(d => d.spellKey === key);
-    if (!alreadyHas && !alreadyDropped && Math.random() < 0.3) {
-      const spell = SPELL_CATALOG[key];
-      if (spell) {
-        itemDrops.push({ spellKey: key, name: spell.name });
+  for (const enemy of enemies) {
+    for (const key of enemy.spellsKnown) {
+      const alreadyHas = heroes.some(h => h.items.some(i => i.spellKey === key));
+      const alreadyDropped = itemDrops.some(d => d.spellKey === key);
+      if (!alreadyHas && !alreadyDropped && Math.random() < 0.3) {
+        const spell = SPELL_CATALOG[key];
+        if (spell) {
+          itemDrops.push({ spellKey: key, name: spell.name });
+        }
       }
     }
   }
@@ -1090,32 +1248,39 @@ export function executeEnemyAI(
 export function heroAttack(state: GameState): GameState {
   if (state.phase !== "player_stack") return state;
 
-  const dmg = calculateDamage(state.hero, state.enemy, state.elementStack, state.enemyStack);
+  const hi = state.activeHeroIndex;
+  const hero = state.heroes[hi];
+  const heroStack = state.heroStacks[hi];
+  const ti = state.targetIndex;
+  const enemy = state.enemies[ti];
+  const enemyStack = state.enemyStacks[ti];
+  const dmg = calculateDamage(hero, enemy, heroStack, enemyStack);
   const newEnemy = {
-    ...state.enemy,
-    currentHp: Math.max(0, state.enemy.currentHp - dmg.finalDamage),
+    ...enemy,
+    currentHp: Math.max(0, enemy.currentHp - dmg.finalDamage),
   };
-  const newAttackCount = state.heroAttackCount + 1;
+  const newEnemies = updateEnemy(state, ti, newEnemy);
+  const newCounts = state.heroAttackCounts.map((c, i) => i === hi ? c + 1 : c);
 
-  const logMsg = `Turn ${state.turn} [HERO ATTACK]: ${state.hero.name} [${state.hero.weapon.label(state.hero.element)}] attacked ${state.enemy.name} [${state.enemy.weapon.label(state.enemy.element)}] for ${dmg.finalDamage} DMG! (Affinity: ${dmg.affinity}x)`;
+  const logMsg = `Turn ${state.turn} [HERO ATTACK]: ${hero.name} [${hero.weapon.label(hero.element)}] attacked ${enemy.name} [${enemy.weapon.label(enemy.element)}] for ${dmg.finalDamage} DMG! (Affinity: ${dmg.affinity}x)`;
   const log = [
     ...state.log,
     makeLogEntry(state.turn, "hero", "attack", logMsg),
   ];
 
-  if (newEnemy.currentHp <= 0) {
-    const victoryMsg = `${state.enemy.name} was defeated! Earned ${state.enemy.xpYield} XP and ${state.enemy.goldYield} Gold.`;
+  if (allEnemiesDead(newEnemies)) {
     return {
       ...state,
-      enemy: newEnemy,
+      enemies: newEnemies,
       phase: "victory",
-      heroAttackCount: newAttackCount,
+      heroAttackCounts: newCounts,
       killKind: "physical",
-      log: [...log, makeLogEntry(state.turn, "system", "victory", victoryMsg)],
+      log: [...log, makeLogEntry(state.turn, "system", "victory", "All enemies defeated!")],
     };
   }
 
-  return { ...state, enemy: newEnemy, phase: "enemy_avatar", heroAttackCount: newAttackCount, log };
+  const newTarget = newEnemy.currentHp <= 0 ? firstAliveEnemyIndex(newEnemies) : ti;
+  return { ...state, enemies: newEnemies, phase: "enemy_avatar", heroAttackCounts: newCounts, targetIndex: newTarget, log };
 }
 
 // --- Syzygy (combo finisher) ---
@@ -1135,43 +1300,48 @@ export function canSyzygy(stack: StackEntry[], syzygyUsed?: boolean, heroAttackC
 
 export function heroSyzygy(state: GameState): GameState {
   if (state.phase !== "player_stack") return state;
-  if (!canSyzygy(state.elementStack, state.syzygyUsed, state.heroAttackCount)) return state;
+  const hi = state.activeHeroIndex;
+  const hero = state.heroes[hi];
+  const heroStack = state.heroStacks[hi];
+  if (!canSyzygy(heroStack, state.syzygyUsedFlags[hi], state.heroAttackCounts[hi])) return state;
 
-  const stack = state.elementStack;
-  const mods = computeStackModifiers(stack, state.hero.weapon);
+  const ti = state.targetIndex;
+  const enemy = state.enemies[ti];
+  const enemyStack = state.enemyStacks[ti];
+  const mods = computeStackModifiers(heroStack, hero.weapon);
 
-  const atkComponent = effectiveAttack(state.hero, stack);
-  const magComponent = Math.floor(state.hero.attack * mods.mag);
-  const stackBonus = 1 + stack.length * 0.5;
+  const atkComponent = effectiveAttack(hero, heroStack);
+  const magComponent = Math.floor(hero.attack * mods.mag);
+  const stackBonus = 1 + heroStack.length * 0.5;
   const rawPower = Math.floor((atkComponent + magComponent) * stackBonus * 1.5);
-  const enemyDef = effectiveDefense(state.enemy, state.enemyStack);
+  const enemyDef = effectiveDefense(enemy, enemyStack);
   const finalDamage = Math.max(1, rawPower - enemyDef);
 
-  const newHero = { ...state.hero };
-  const newEnemy = { ...state.enemy, currentHp: Math.max(0, state.enemy.currentHp - finalDamage) };
-  const newAttackCount = state.heroAttackCount + 1;
+  const newEnemy = { ...enemy, currentHp: Math.max(0, enemy.currentHp - finalDamage) };
+  const newEnemies = updateEnemy(state, ti, newEnemy);
+  const newCounts = state.heroAttackCounts.map((c, i) => i === hi ? c + 1 : c);
+  const newSyzygyFlags = state.syzygyUsedFlags.map((f, i) => i === hi ? true : f);
 
-  const logMsg = `Turn ${state.turn} [SYZYGY!]: ${state.hero.name} unleashes a ${stack.length}-chain syzygy for ${finalDamage} DMG! (ATK ${atkComponent} + MAG ${magComponent}, ×${stackBonus.toFixed(2)} chain, ×1.5 syzygy)`;
+  const logMsg = `Turn ${state.turn} [SYZYGY!]: ${hero.name} unleashes a ${heroStack.length}-chain syzygy on ${enemy.name} for ${finalDamage} DMG! (ATK ${atkComponent} + MAG ${magComponent}, ×${stackBonus.toFixed(2)} chain, ×1.5 syzygy)`;
   const log = [
     ...state.log,
     makeLogEntry(state.turn, "hero", "syzygy", logMsg),
   ];
 
-  if (newEnemy.currentHp <= 0) {
-    const victoryMsg = `${state.enemy.name} was defeated! Earned ${state.enemy.xpYield} XP and ${state.enemy.goldYield} Gold.`;
+  if (allEnemiesDead(newEnemies)) {
     return {
       ...state,
-      hero: newHero,
-      enemy: newEnemy,
+      enemies: newEnemies,
       phase: "victory",
-      syzygyUsed: true,
-      heroAttackCount: newAttackCount,
+      syzygyUsedFlags: newSyzygyFlags,
+      heroAttackCounts: newCounts,
       killKind: "combo",
-      log: [...log, makeLogEntry(state.turn, "system", "victory", victoryMsg)],
+      log: [...log, makeLogEntry(state.turn, "system", "victory", "All enemies defeated!")],
     };
   }
 
-  return { ...state, hero: newHero, enemy: newEnemy, phase: "enemy_avatar", syzygyUsed: true, heroAttackCount: newAttackCount, log };
+  const newTarget = newEnemy.currentHp <= 0 ? firstAliveEnemyIndex(newEnemies) : ti;
+  return { ...state, enemies: newEnemies, phase: "enemy_avatar", syzygyUsedFlags: newSyzygyFlags, heroAttackCounts: newCounts, targetIndex: newTarget, log };
 }
 
 export function heroShiftElement(
@@ -1181,54 +1351,60 @@ export function heroShiftElement(
 ): GameState {
   if (state.phase !== "player_stack") return state;
 
-  const prevLabel = elementLabel(state.hero.element);
+  const hi = state.activeHeroIndex;
+  const hero = state.heroes[hi];
+  const heroStack = state.heroStacks[hi];
+  const prevLabel = elementLabel(hero.element);
   let newElement: D3Element;
   let actDesc: string;
 
   let applied: D3Element;
   if (action === "rotate") {
     applied = { r: ((steps % 3) + 3) % 3, s: 0 };
-    newElement = rotateElement(state.hero.element, steps);
+    newElement = rotateElement(hero.element, steps);
     actDesc = `rotated (+${steps * 120}°)`;
   } else {
     applied = { r: 0, s: 1 };
-    newElement = reflectElement(state.hero.element);
+    newElement = reflectElement(hero.element);
     actDesc = "toggled reflection";
   }
 
-  const newHero = { ...state.hero, element: newElement };
-  const powerBefore = stancePower(state.hero);
+  const newHero = { ...hero, element: newElement };
+  const powerBefore = stancePower(hero);
   const powerAfter = stancePower(newHero);
-  const newStack = [...state.elementStack, { applied, result: newElement, powerBefore, powerAfter }];
-  const logMsg = `Turn ${state.turn} [HERO SHIFT]: ${state.hero.name} ${actDesc} from ${prevLabel} to ${elementLabel(newElement)}.`;
+  const newStack = [...heroStack, { applied, result: newElement, powerBefore, powerAfter }];
+  const logMsg = `Turn ${state.turn} [HERO SHIFT]: ${hero.name} ${actDesc} from ${prevLabel} to ${elementLabel(newElement)}.`;
 
   return {
     ...state,
-    hero: newHero,
+    heroes: updateHero(state, hi, newHero),
     phase: "player_stack_locked",
-    elementStack: newStack,
-    heroAttackCount: state.heroAttackCount + 1,
+    heroStacks: updateHeroStack(state, hi, newStack),
+    heroAttackCounts: state.heroAttackCounts.map((c, i) => i === hi ? c + 1 : c),
     log: [...state.log, makeLogEntry(state.turn, "hero", `shift_${action}`, logMsg)],
   };
 }
 
 export function heroUnstackElement(state: GameState): GameState {
   if (state.phase !== "player_stack") return state;
-  if (state.elementStack.length === 0) return state;
+  const hi = state.activeHeroIndex;
+  const hero = state.heroes[hi];
+  const heroStack = state.heroStacks[hi];
+  if (heroStack.length === 0) return state;
 
-  const newStack = state.elementStack.slice(0, -1);
+  const newStack = heroStack.slice(0, -1);
   const prevElement = newStack.length > 0
     ? newStack[newStack.length - 1].result
-    : state.hero.weapon.identity;
-  const newHero = { ...state.hero, element: prevElement };
-  const logMsg = `Turn ${state.turn} [HERO UNSTACK]: ${state.hero.name} reverted to ${elementLabel(prevElement)}.`;
+    : hero.weapon.identity;
+  const newHero = { ...hero, element: prevElement };
+  const logMsg = `Turn ${state.turn} [HERO UNSTACK]: ${hero.name} reverted to ${elementLabel(prevElement)}.`;
 
   return {
     ...state,
-    hero: newHero,
+    heroes: updateHero(state, hi, newHero),
     phase: "player_stack_locked",
-    elementStack: newStack,
-    heroAttackCount: state.heroAttackCount + 1,
+    heroStacks: updateHeroStack(state, hi, newStack),
+    heroAttackCounts: state.heroAttackCounts.map((c, i) => i === hi ? c + 1 : c),
     log: [...state.log, makeLogEntry(state.turn, "hero", "unstack", logMsg)],
   };
 }
@@ -1241,19 +1417,24 @@ export function heroItemCount(hero: CharacterStats, spellKey: string): number {
 export function heroCastSpell(state: GameState, spellKey: string, targetSelf: boolean): GameState {
   if (state.phase !== "player_stack") return state;
 
+  const hi = state.activeHeroIndex;
+  const hero = state.heroes[hi];
+  const heroStack = state.heroStacks[hi];
   const spell = SPELL_CATALOG[spellKey];
   if (!spell) return state;
 
-  const itemIdx = state.hero.items.findIndex((i) => i.spellKey === spellKey);
-  if (itemIdx === -1 || state.hero.items[itemIdx].count <= 0) {
+  const itemIdx = hero.items.findIndex((i) => i.spellKey === spellKey);
+  if (itemIdx === -1 || hero.items[itemIdx].count <= 0) {
     return {
       ...state,
       log: [...state.log, makeLogEntry(state.turn, "system", "cast_fail", `No ${spell.name} items left!`)],
     };
   }
 
-  const target = targetSelf || spell.spellType === "heal" ? state.hero : state.enemy;
-  const { result, target: newTarget } = castSpell(spell, state.hero, target, state.elementStack);
+  const ti = state.targetIndex;
+  const enemy = state.enemies[ti];
+  const target = targetSelf || spell.spellType === "heal" ? hero : enemy;
+  const { result, target: newTarget } = castSpell(spell, hero, target, heroStack);
 
   if (!result.success) {
     return {
@@ -1262,15 +1443,17 @@ export function heroCastSpell(state: GameState, spellKey: string, targetSelf: bo
     };
   }
 
-  const newItems = state.hero.items.map((item, i) =>
+  const newItems = hero.items.map((item, i) =>
     i === itemIdx ? { ...item, count: item.count - 1 } : item,
   );
 
   const isTargetSelf = targetSelf || spell.spellType === "heal";
   const newHero = isTargetSelf
     ? { ...(newTarget as CharacterStats), items: newItems }
-    : { ...state.hero, items: newItems };
-  const newEnemy = isTargetSelf ? state.enemy : (newTarget as EnemyStats);
+    : { ...hero, items: newItems };
+  const newEnemy = isTargetSelf ? enemy : (newTarget as EnemyStats);
+  const newEnemies = isTargetSelf ? state.enemies : updateEnemy(state, ti, newEnemy);
+  const newHeroes = updateHero(state, hi, newHero);
 
   const log = [
     ...state.log,
@@ -1278,42 +1461,51 @@ export function heroCastSpell(state: GameState, spellKey: string, targetSelf: bo
   ];
 
   const isAttack = spell.spellType === "damage";
-  const newAttackCount = isAttack ? state.heroAttackCount + 1 : state.heroAttackCount;
+  const newCounts = isAttack ? state.heroAttackCounts.map((c, i) => i === hi ? c + 1 : c) : state.heroAttackCounts;
 
-  if (newEnemy.currentHp <= 0) {
-    const victoryMsg = `${state.enemy.name} was defeated!`;
+  if (!isTargetSelf && allEnemiesDead(newEnemies)) {
     return {
       ...state,
-      hero: newHero,
-      enemy: newEnemy,
+      heroes: newHeroes,
+      enemies: newEnemies,
       phase: "victory",
-      heroAttackCount: newAttackCount,
+      heroAttackCounts: newCounts,
       killKind: "magic",
-      log: [...log, makeLogEntry(state.turn, "system", "victory", victoryMsg)],
+      log: [...log, makeLogEntry(state.turn, "system", "victory", "All enemies defeated!")],
     };
   }
 
-  return { ...state, hero: newHero, enemy: newEnemy, phase: "enemy_avatar", heroAttackCount: newAttackCount, log };
+  const newTarget2 = !isTargetSelf && newEnemy.currentHp <= 0 ? firstAliveEnemyIndex(newEnemies) : ti;
+  return { ...state, heroes: newHeroes, enemies: newEnemies, phase: isTargetSelf ? state.phase : "enemy_avatar", heroAttackCounts: newCounts, targetIndex: newTarget2, log };
 }
 
-export function executeEnemyTurn(state: GameState): GameState {
+export function executeEnemyTurn(state: GameState, enemyIndex: number): GameState {
   if (state.phase !== "enemy_stack") return state;
 
-  const aiAction = executeEnemyAI(state.enemy, state.hero, state.enemyStack.length, state.elementStack);
-  let newHero = state.hero;
+  const enemy = state.enemies[enemyIndex];
+  const enemyStack = state.enemyStacks[enemyIndex];
+  if (enemy.currentHp <= 0) return state;
+
+  const aliveHeroes = state.heroes.map((h, i) => ({ h, i })).filter(x => x.h.currentHp > 0);
+  const targetHeroIdx = aliveHeroes.length > 0 ? aliveHeroes[Math.floor(Math.random() * aliveHeroes.length)].i : 0;
+  const targetHero = state.heroes[targetHeroIdx];
+  const targetHeroStack = state.heroStacks[targetHeroIdx];
+
+  const aiAction = executeEnemyAI(enemy, targetHero, enemyStack.length, targetHeroStack);
+  let newHeroes = state.heroes;
   let newEnemy = aiAction.newEnemy;
-  let newEnemyStack = state.enemyStack;
+  let newEnemyStack = enemyStack;
   let logMsg: string;
 
   if (aiAction.shiftApplied) {
-    const powerBefore = stancePower(state.enemy, state.enemyStack);
+    const powerBefore = stancePower(enemy, enemyStack);
     const entry: StackEntry = {
       applied: aiAction.shiftApplied,
       result: newEnemy.element,
       powerBefore,
       powerAfter: 0,
     };
-    newEnemyStack = [...state.enemyStack, entry];
+    newEnemyStack = [...enemyStack, entry];
     const powerAfter = stancePower(newEnemy, newEnemyStack);
     newEnemyStack[newEnemyStack.length - 1] = { ...entry, powerAfter };
   }
@@ -1321,18 +1513,14 @@ export function executeEnemyTurn(state: GameState): GameState {
   if (aiAction.actionType === "spell_heal" || aiAction.actionType === "spell_damage") {
     logMsg = aiAction.message;
     if (aiAction.targetDamage) {
-      newHero = {
-        ...state.hero,
-        currentHp: Math.max(0, state.hero.currentHp - aiAction.targetDamage),
-      };
+      const hitHero = { ...targetHero, currentHp: Math.max(0, targetHero.currentHp - aiAction.targetDamage) };
+      newHeroes = state.heroes.map((h, i) => i === targetHeroIdx ? hitHero : h);
     }
   } else {
-    const dmg = calculateDamage(newEnemy, state.hero, newEnemyStack, state.elementStack);
-    newHero = {
-      ...state.hero,
-      currentHp: Math.max(0, state.hero.currentHp - dmg.finalDamage),
-    };
-    logMsg = `Turn ${state.turn} [ENEMY ATTACK]: ${newEnemy.name} [${newEnemy.weapon.label(newEnemy.element)}] struck ${state.hero.name} [${state.hero.weapon.label(state.hero.element)}] for ${dmg.finalDamage} DMG!`;
+    const dmg = calculateDamage(newEnemy, targetHero, newEnemyStack, targetHeroStack);
+    const hitHero = { ...targetHero, currentHp: Math.max(0, targetHero.currentHp - dmg.finalDamage) };
+    newHeroes = state.heroes.map((h, i) => i === targetHeroIdx ? hitHero : h);
+    logMsg = `Turn ${state.turn} [ENEMY ATTACK]: ${newEnemy.name} [${newEnemy.weapon.label(newEnemy.element)}] struck ${targetHero.name} [${targetHero.weapon.label(targetHero.element)}] for ${dmg.finalDamage} DMG!`;
   }
 
   const log = [
@@ -1340,23 +1528,25 @@ export function executeEnemyTurn(state: GameState): GameState {
     makeLogEntry(state.turn, "enemy", aiAction.actionType, logMsg),
   ];
 
-  if (newHero.currentHp <= 0) {
-    const defeatMsg = `${state.hero.name} was defeated in battle...`;
+  const newEnemies = updateEnemy(state, enemyIndex, newEnemy);
+  const newEnemyStacks = updateEnemyStack(state, enemyIndex, newEnemyStack);
+
+  if (allHeroesDead(newHeroes)) {
     return {
       ...state,
-      hero: newHero,
-      enemy: newEnemy,
-      enemyStack: newEnemyStack,
+      heroes: newHeroes,
+      enemies: newEnemies,
+      enemyStacks: newEnemyStacks,
       phase: "defeat",
-      log: [...log, makeLogEntry(state.turn, "system", "defeat", defeatMsg)],
+      log: [...log, makeLogEntry(state.turn, "system", "defeat", "The party was defeated in battle...")],
     };
   }
 
   return {
     ...state,
-    hero: newHero,
-    enemy: newEnemy,
-    enemyStack: newEnemyStack,
+    heroes: newHeroes,
+    enemies: newEnemies,
+    enemyStacks: newEnemyStacks,
     turn: state.turn + 1,
     phase: "player_hit",
     log,

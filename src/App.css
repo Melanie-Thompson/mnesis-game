@@ -138,6 +138,10 @@
 }
 .hp-bar-vertical-fill.enemy {
   background: var(--green);
+  box-shadow: 0 0 6px rgba(80, 232, 80, 0.5);
+}
+.hp-bar-vertical.enemy {
+  border-color: var(--green);
 }
 .player-below-avatar {
   display: flex;
@@ -461,12 +465,10 @@ table.stats th {
   flex: 1;
   justify-content: flex-end;
   border-color: var(--border);
-  background: url("/klein-mace.png") center center / 60% auto no-repeat #080e08;
 }
 .stack-tree-player {
   flex: 1;
   border-color: #204a20;
-  background: url("/prismatic-edge.png") center center / 60% auto no-repeat #080e08;
 }
 .stack-tree-divider {
   display: flex;
@@ -494,12 +496,17 @@ table.stats th {
   max-height: 60vh;
   object-fit: contain;
   user-select: none;
+  position: relative;
+  z-index: 1;
 }
 
 .enemy-taunt {
   display: flex;
   justify-content: center;
   padding: 12px 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
 }
 .enemy-taunt-bubble {
   display: flex;
@@ -957,7 +964,8 @@ table.stats th {
   font-family: inherit;
   letter-spacing: 2px;
   text-transform: uppercase;
-  white-space: nowrap;
+  max-width: calc(100% - 16px);
+  text-align: center;
   animation: toast-pop 4s ease forwards;
 }
 
@@ -1158,6 +1166,364 @@ table.stats th {
 @keyframes modal-pop {
   from { opacity: 0; transform: scale(0.9); }
   to { opacity: 1; transform: scale(1); }
+}
+
+/* --- Mini deck (stacked cards, top-left) --- */
+
+.mini-deck {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 20;
+  padding-top: 12px;
+  padding-right: 12px;
+}
+
+.mini-deck-card {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 7px;
+  background: #0a120a;
+  border: 3px solid var(--border);
+  pointer-events: none;
+}
+.deck-top {
+  position: relative;
+  z-index: 5;
+}
+.deck-shadow {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  opacity: 0.35;
+  padding: 0;
+  box-sizing: border-box;
+}
+.deck-shadow .deck-card-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.deck-card-avatar {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+.deck-card-label {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.deck-card-name {
+  font-size: 0.32rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.deck-card-hp {
+  font-size: 0.25rem;
+  font-weight: 600;
+  color: var(--green-dim);
+}
+
+.hero-deck .deck-top {
+  border-color: var(--green);
+  box-shadow: 0 0 6px var(--green);
+}
+.hero-deck .deck-top .deck-card-name {
+  color: var(--green);
+}
+.enemy-deck .mini-deck-card {
+  border-color: var(--red);
+}
+.enemy-deck .deck-top {
+  box-shadow: 0 0 6px var(--red);
+}
+.enemy-deck .deck-top .deck-card-name {
+  color: var(--red);
+}
+
+/* --- All enemies row (victory/defeat) --- */
+
+.all-enemies-row {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  padding: 0 4px;
+  box-sizing: border-box;
+}
+.all-enemies-row > .panel {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.all-enemies-row .enemy-avatar-wrap {
+  width: min(40vw, 160px);
+  height: min(40vw, 160px);
+}
+
+/* --- Main card (centered) --- */
+
+.main-card-anchor {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(70vw, 280px);
+}
+
+.deck-acted {
+  opacity: 0.25;
+}
+.deck-dead {
+  opacity: 0.15;
+}
+
+/* --- Active card indicators --- */
+
+.hero-active {
+  border-color: var(--green) !important;
+  box-shadow: 0 0 12px rgba(80, 232, 80, 0.4);
+}
+.hero-dead {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.active-indicator {
+  font-size: 0.45rem;
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--green);
+  text-shadow: 0 0 6px var(--green);
+  text-align: center;
+  margin-top: 4px;
+  animation: tap-pulse 1.5s ease-in-out infinite;
+}
+
+.enemy-targeted {
+  border-color: var(--red) !important;
+  box-shadow: 0 0 12px rgba(240, 64, 64, 0.4);
+}
+.enemy-dead {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.target-indicator {
+  font-size: 0.45rem;
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--red);
+  text-shadow: 0 0 6px var(--red);
+  text-align: center;
+  margin-top: 4px;
+  animation: tap-pulse 1.5s ease-in-out infinite;
+}
+
+/* --- Stack avatar background --- */
+
+.stack-avatar-bg {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  max-width: 240px;
+  height: 100%;
+  object-fit: contain;
+  object-position: center top;
+  image-rendering: pixelated;
+  opacity: 0.12;
+  pointer-events: none;
+  z-index: 0;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 90%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 30%, rgba(0,0,0,0) 90%);
+}
+
+/* --- Hero stack turn indicator --- */
+
+.hero-stack-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hero-turn-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(80, 232, 80, 0.2);
+  border: 1px solid var(--green);
+  color: var(--green);
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+
+/* --- Enemy stack turn indicator --- */
+
+/* --- Enemy avatar above stack --- */
+
+.stack-enemy-avatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  opacity: 0.25;
+  pointer-events: none;
+}
+.stack-enemy-avatar-img {
+  width: min(50vw, 180px);
+  height: min(50vw, 180px);
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+.stack-enemy-avatar-info {
+  display: none;
+}
+.stack-enemy-avatar-name,
+.stack-enemy-avatar-hp {
+  display: none;
+}
+
+.enemy-stack-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.enemy-turn-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(240, 64, 64, 0.2);
+  border: 1px solid var(--red);
+  color: var(--red);
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+
+/* --- Hit card overlay --- */
+
+.hit-card-overlay {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 200;
+  pointer-events: none;
+  animation: hit-card-pop 2s ease forwards;
+}
+@keyframes hit-card-pop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+  10% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+  20% { transform: translate(-50%, -50%) scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -60%) scale(0.95); }
+}
+
+.hit-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 16px;
+  background: rgba(10, 18, 10, 0.95);
+  border: 3px solid var(--border);
+  min-width: 120px;
+}
+.hit-enemy .hit-card {
+  border-color: var(--red);
+  box-shadow: 0 0 20px rgba(240, 64, 64, 0.4);
+}
+.hit-hero .hit-card {
+  border-color: var(--green);
+  box-shadow: 0 0 20px rgba(80, 232, 80, 0.4);
+}
+
+.hit-heal .hit-card {
+  border-color: var(--green);
+  box-shadow: 0 0 20px rgba(80, 232, 80, 0.4);
+}
+
+.hit-card-avatar {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+.hit-card-info {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.hit-card-name {
+  font-size: 0.4rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--text);
+}
+.hit-card-amount {
+  font-size: 0.5rem;
+  font-weight: 800;
+}
+.hit-enemy .hit-card-amount,
+.hit-hero .hit-card-amount {
+  color: var(--red);
+  text-shadow: 0 0 8px var(--red);
+}
+.hit-heal .hit-card-amount {
+  color: var(--green);
+  text-shadow: 0 0 8px var(--green);
+}
+
+.hit-card-hp-bar {
+  width: 100%;
+  height: 8px;
+  background: #0a1a0a;
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+.hit-card-hp-old {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: var(--red);
+  opacity: 0.4;
+}
+.hit-card-hp-new {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: var(--green);
+}
+.hit-card-hp-heal {
+  animation: hp-fill-glow 1s ease-out;
+}
+@keyframes hp-fill-glow {
+  0% { box-shadow: 0 0 12px var(--green); }
+  100% { box-shadow: none; }
+}
+.hit-card-hp-text {
+  font-size: 0.3rem;
+  font-weight: 700;
+  color: var(--green-dim);
 }
 
 /* --- Unused leftovers --- */

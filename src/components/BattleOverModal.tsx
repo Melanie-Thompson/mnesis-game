@@ -9,12 +9,13 @@ export default function BattleOverModal() {
 
   const isVictory = state.phase === "victory";
   const reward = state.victoryReward;
+  const leader = state.heroes[0];
 
   return (
     <div className="modal-overlay" onClick={actions.startBattle}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <img
-          src={isVictory ? "/astra-victory.png" : "/astra-defeat.png?v=2"}
+          src={isVictory ? leader.assets.avatarVictory : leader.assets.avatarDefeat}
           alt={isVictory ? "Victory" : "Defeat"}
           className={`modal-battle-avatar ${isVictory ? "modal-victory-avatar" : "modal-defeat-avatar"}`}
         />
@@ -56,19 +57,19 @@ export default function BattleOverModal() {
             )}
             <div className="modal-xp-bar">
               <div className="modal-xp-label">
-                XP {state.hero.xp} / {xpForLevel(state.hero.level)}
+                XP {leader.xp} / {xpForLevel(leader.level)}
               </div>
               <div className="bar-track" style={{ marginTop: 2 }}>
                 <div
                   className="bar-fill asc"
-                  style={{ width: `${Math.min(100, (state.hero.xp / xpForLevel(state.hero.level)) * 100)}%` }}
+                  style={{ width: `${Math.min(100, (leader.xp / xpForLevel(leader.level)) * 100)}%` }}
                 />
               </div>
             </div>
           </div>
         ) : (
           <p className="modal-detail">
-            {state.hero.name} has fallen in battle...
+            The party has fallen in battle...
           </p>
         )}
 
