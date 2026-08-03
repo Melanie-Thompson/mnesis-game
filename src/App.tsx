@@ -1,4 +1,4 @@
-import { useGameState, useGameActions, useShaking, useToasts } from "./game/useGameStore";
+import { useGameState, useGameActions } from "./game/useGameStore";
 import PlayerPanel from "./components/PlayerPanel";
 import EnemyPanel from "./components/EnemyPanel";
 import StackTree from "./components/StackTree";
@@ -8,13 +8,12 @@ import "./App.css";
 export default function App() {
   const state = useGameState();
   const actions = useGameActions();
-  const shaking = useShaking();
-  const toasts = useToasts();
 
   const phase = state.phase;
+  const healing = state.lastActionSelfHeal;
 
   function handleTap() {
-    if (phase === "player_avatar") {
+    if (phase === "player_avatar" && !healing) {
       actions.advancePhase();
     }
   }
@@ -25,11 +24,11 @@ export default function App() {
     || phase === "victory"
     || phase === "defeat";
   const showStack = phase === "player_stack" || phase === "player_stack_locked" || phase === "enemy_stack";
-  const canInteract = phase === "player_avatar" || phase === "player_stack";
+  const canInteract = (phase === "player_avatar" && !healing) || phase === "player_stack";
   const hideSign = phase === "victory" || phase === "defeat" || phase === "enemy_dying";
 
   return (
-    <div id="app" className={shaking ? "screen-shake" : ""}>
+    <div id="app" className={state.shaking ? "screen-shake" : ""}>
       <div className="title-row">
         <h1>MNESIS</h1>
         {!hideSign && <svg className="go-sign" width="72" height="64" viewBox="-2 -2 36 32">
@@ -51,9 +50,9 @@ export default function App() {
         <span className="clock">TURN {state.turn}</span>
       </div>
 
-      {toasts.length > 0 && (
+      {state.toasts.length > 0 && (
         <div className="toast-stack">
-          {toasts.map((t) => (
+          {state.toasts.map((t) => (
             <div key={t.id} className={`toast toast-${t.type}`}>{t.text}</div>
           ))}
         </div>
@@ -64,7 +63,7 @@ export default function App() {
           <div className="centered-panel">
             <div className="avatar-anchor">
               <PlayerPanel />
-              {phase === "player_avatar" && (
+              {phase === "player_avatar" && !healing && (
                 <div className="tap-hint">TAP TO FIGHT</div>
               )}
             </div>

@@ -61,12 +61,7 @@ interface GameActions {
 
 interface StoreState extends GameState {
   sceneCallbacks: SceneCallbacks | null;
-  toasts: Toast[];
   battleLog: Toast[];
-  enemyCurse: string | null;
-  lastActionSelfHeal: boolean;
-  unstackingTop: boolean;
-  shaking: boolean;
   actions: GameActions;
 }
 
@@ -166,7 +161,7 @@ const useStore = create<StoreState>((set, get) => {
     const s = get();
     if (s.phase !== "enemy_avatar") return;
     set({ phase: "enemy_stack" as TurnPhase });
-    setTimeout(() => doEnemyTurn(), 800 + Math.random() * 1500);
+    setTimeout(() => doEnemyTurn(), 5000);
   }
 
   function advanceToPlayerAvatar() {
@@ -481,12 +476,7 @@ const useStore = create<StoreState>((set, get) => {
   return {
     ...createInitialState(),
     sceneCallbacks: null,
-    toasts: [],
     battleLog: [],
-    enemyCurse: null,
-    lastActionSelfHeal: false,
-    unstackingTop: false,
-    shaking: false,
     actions,
   };
 });
@@ -505,6 +495,11 @@ export function useGameState(): GameState {
       killKind: s.killKind,
       heroAttackCount: s.heroAttackCount,
       victoryReward: s.victoryReward,
+      lastActionSelfHeal: s.lastActionSelfHeal,
+      shaking: s.shaking,
+      toasts: s.toasts,
+      enemyCurse: s.enemyCurse,
+      unstackingTop: s.unstackingTop,
     })),
   );
 }

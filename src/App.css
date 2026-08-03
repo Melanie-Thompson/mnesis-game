@@ -455,15 +455,18 @@ table.stats th {
   padding: 4px;
   position: relative;
   z-index: 1;
+  min-height: 280px;
 }
 .stack-tree-enemy {
   flex: 1;
   justify-content: flex-end;
   border-color: var(--border);
+  background: url("/klein-mace.png") center center / 60% auto no-repeat #080e08;
 }
 .stack-tree-player {
   flex: 1;
   border-color: #204a20;
+  background: url("/prismatic-edge.png") center center / 60% auto no-repeat #080e08;
 }
 .stack-tree-divider {
   display: flex;

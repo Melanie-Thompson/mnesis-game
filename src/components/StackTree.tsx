@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useGameState, useGameActions, heroItemCount, useEnemyCurse, useUnstackingTop } from "../game/useGameStore";
+import { useGameState, useGameActions, heroItemCount } from "../game/useGameStore";
 import {
   rotateElement,
   reflectElement,
@@ -229,11 +229,6 @@ function AttackIcon({ kind, color, size = 14 }: { kind: string; color: string; s
 // Attack pie chart — shows relative attack strengths
 // ============================================================
 
-function hexToRgb(hex: string): [number, number, number] {
-  const n = parseInt(hex.slice(1), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-
 function AttackSidebar({
   hero, enemy, heroStack, enemyStack, syzygyUsed, heroAttackCount, canAct, onAttack, onCastSpell, onSyzygy,
 }: {
@@ -252,9 +247,6 @@ function AttackSidebar({
   const best = estimates.filter((e) => e.available && e.attack.kind !== "heal")
     .reduce<AttackEstimate | null>((b, c) => !b || c.estimatedValue > b.estimatedValue ? c : b, null);
 
-  const available = estimates.filter((e) => e.available && e.estimatedValue > 0 && !e.attack.requiresCombo);
-  const maxVal = available.reduce((m, e) => Math.max(m, e.estimatedValue), 1);
-
   function handleChipClick(est: AttackEstimate) {
     if (!canAct || !est.available) return;
     if (est.attack.kind === "physical") {
@@ -266,105 +258,8 @@ function AttackSidebar({
     }
   }
 
-  const GW = 20;
-  const GH = 14;
-  const PX = 6;
-  const MARGIN_L = 24;
-  const MARGIN_B = 16;
-
-  const blobs = available.map((est, i) => {
-    const strength = est.estimatedValue / maxVal;
-    const angle = (i / available.length) * Math.PI * 2 - Math.PI / 2;
-    const spread = available.length > 1 ? 0.25 : 0;
-    const cx = GW / 2 + Math.cos(angle) * GW * spread;
-    const cy = GH / 2 + Math.sin(angle) * GH * spread;
-    const r = 3 + strength * 5;
-    const rgb = hexToRgb(est.attack.color);
-    return { cx, cy, r, strength, rgb, key: est.attack.key, color: est.attack.color, shortName: est.attack.shortName, kind: est.attack.kind };
-  });
-
-  const pixels: { x: number; y: number; r: number; g: number; b: number; a: number }[] = [];
-  for (let py = 0; py < GH; py++) {
-    for (let px = 0; px < GW; px++) {
-      let r = 0, g = 0, b = 0, totalW = 0;
-      for (const blob of blobs) {
-        const dx = px - blob.cx;
-        const dy = py - blob.cy;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const w = Math.max(0, 1 - dist / blob.r) * blob.strength;
-        r += blob.rgb[0] * w;
-        g += blob.rgb[1] * w;
-        b += blob.rgb[2] * w;
-        totalW += w;
-      }
-      if (totalW > 0.05) {
-        r /= totalW; g /= totalW; b /= totalW;
-        const a = Math.min(1, totalW);
-        pixels.push({ x: px, y: py, r: Math.round(r), g: Math.round(g), b: Math.round(b), a });
-      }
-    }
-  }
-
-  const svgW = MARGIN_L + GW * PX;
-  const svgH = GH * PX + MARGIN_B;
-
-  const ATTACK_GLYPHS: Record<string, string> = {
-    physical: "⚔",
-    magic: "✧",
-    heal: "✚",
-    combo: "☍",
-  };
-
   return (
     <>
-      <div className="attack-heatmap">
-        <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`}>
-          <rect x={MARGIN_L} y={0} width={GW * PX} height={GH * PX} fill="#060a06" stroke="#1a2a1a" strokeWidth={1} shapeRendering="crispEdges" />
-          {pixels.map((p) => (
-            <rect
-              key={`${p.x}-${p.y}`}
-              x={MARGIN_L + p.x * PX} y={p.y * PX}
-              width={PX} height={PX}
-              fill={`rgb(${p.r},${p.g},${p.b})`}
-              opacity={p.a}
-              shapeRendering="crispEdges"
-            />
-          ))}
-          {blobs.map((b) => (
-            <text
-              key={`label-${b.key}`}
-              x={MARGIN_L - 4}
-              y={b.cy * PX + PX / 2}
-              textAnchor="end"
-              dominantBaseline="central"
-              fill={b.color}
-              fontSize={12}
-              fontFamily="inherit"
-              style={{ filter: `drop-shadow(0 0 2px ${b.color})` }}
-            >
-              {ATTACK_GLYPHS[b.kind] || "◇"} {b.shortName}
-            </text>
-          ))}
-          {blobs.map((b, i) => {
-            const bx = MARGIN_L + b.cx * PX;
-            return (
-              <text
-                key={`axis-${b.key}`}
-                x={bx}
-                y={GH * PX + MARGIN_B - 2}
-                textAnchor="middle"
-                dominantBaseline="auto"
-                fill={b.color}
-                fontSize={9}
-                fontFamily="inherit"
-                opacity={0.7}
-              >
-                {Math.round(b.strength * 100)}%
-              </text>
-            );
-          })}
-        </svg>
-      </div>
       <div className="attack-chips">
         {estimates.map((est) => {
           const item = hero.items.find((i) => i.spellKey === est.attack.key);
@@ -429,8 +324,8 @@ function EnemyTaunt({ name }: { name: string }) {
 export default function StackTree() {
   const state = useGameState();
   const actions = useGameActions();
-  const enemyCurse = useEnemyCurse();
-  const unstacking = useUnstackingTop();
+  const enemyCurse = state.enemyCurse;
+  const unstacking = state.unstackingTop;
   const h = state.hero;
   const stack = state.elementStack;
   const enemyStack = state.enemyStack;
@@ -507,7 +402,6 @@ export default function StackTree() {
         </div>
         <div className="stack-tree-wrap stack-tree-enemy">
           <EnemyTree stack={enemyStack} enemy={state.enemy} />
-          <EnemyTaunt name={state.enemy.name} />
         </div>
       </>)}
 
@@ -517,6 +411,9 @@ export default function StackTree() {
           <span className="stack-tree-vs">VS</span>
         </div>
       )}
+
+      {/* Enemy taunt — below VS */}
+      {isEnemyTurn && <EnemyTaunt name={state.enemy.name} />}
 
       {/* Player tree — downward */}
       {(isPlayerTurn || (!isEnemyTurn && !isDying)) && (<>

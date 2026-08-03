@@ -278,9 +278,9 @@ export function computeStackModifiers(stack: StackEntry[], weapon: Weapon = WEAP
   }
 
   return {
-    atk: Math.round(atk * 100) / 100,
+    atk: Math.round(Math.min(atk, 2.5) * 100) / 100,
     def: Math.round(def * 100) / 100,
-    mag: Math.round(mag * 100) / 100,
+    mag: Math.round(Math.min(mag, 2.5) * 100) / 100,
   };
 }
 
@@ -657,6 +657,11 @@ export interface GameState {
   killKind: AttackKind | null;
   heroAttackCount: number;
   victoryReward: VictoryReward | null;
+  lastActionSelfHeal: boolean;
+  shaking: boolean;
+  toasts: { id: number; text: string; type: "buff" | "debuff" | "info" | "warn" }[];
+  enemyCurse: string | null;
+  unstackingTop: boolean;
 }
 
 let logIdCounter = 0;
@@ -706,6 +711,11 @@ export function createInitialState(): GameState {
     killKind: null,
     heroAttackCount: 0,
     victoryReward: null,
+    lastActionSelfHeal: false,
+    shaking: false,
+    toasts: [],
+    enemyCurse: null,
+    unstackingTop: false,
   };
 }
 
